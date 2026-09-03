@@ -1,0 +1,8 @@
+build/*.o
+/server
+/client
+*.swp
+*.swo
+.DS_Store
+.vscode/
+.idea/
