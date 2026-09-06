@@ -6,3 +6,10 @@ build/*.o
 .DS_Store
 .vscode/
 .idea/
+test/test_client
+test/test_server
+test/rdt_client
+test/rdt_server
+test/close_client
+test/*.log
+test/rdt_recv_file.txt
