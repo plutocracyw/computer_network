@@ -32,6 +32,29 @@ static int send_packet(tju_tcp_t *sock, char *data, uint16_t dlen,
     return 0;
 }
 
+/* 释放一个 TCP 连接的全部资源：从表中移除、释放缓冲/窗口、销毁锁、free */
+static void free_tcp(tju_tcp_t *sock)
+{
+    // 从 established 表移除
+    int h = cal_hash(sock->established_local_addr.ip, sock->established_local_addr.port,
+                     sock->established_remote_addr.ip, sock->established_remote_addr.port);
+    if (established_socks[h] == sock)
+        established_socks[h] = NULL;
+    // 释放字节流缓冲
+    free(sock->sending_buf);
+    free(sock->received_buf);
+    // 释放窗口
+    free(sock->window.wnd_send);
+    free(sock->window.wnd_recv);
+    // 销毁同步原语
+    pthread_mutex_destroy(&(sock->send_lock));
+    pthread_mutex_destroy(&(sock->recv_lock));
+    pthread_mutex_destroy(&(sock->timer_lock));
+    pthread_cond_destroy(&(sock->wait_cond));
+    pthread_cond_destroy(&(sock->timer_cond));
+    free(sock);
+}
+
 /* 发送一个纯 ACK：seq=SND.NXT，ack=RCV.NXT（期望序号）*/
 static void send_ack(tju_tcp_t *sock)
 {
@@ -318,28 +341,80 @@ static void handle_syn(tju_tcp_t *sock, char *pkt)
     }
 }
 
-/* 收到 FIN：连接释放。M2 实现：回 ACK 并按主动/被动路径迁移状态 */
+/* 处理收到的 FIN：回 ACK，并按当前状态迁移 */
 static void handle_fin(tju_tcp_t *sock, char *pkt)
 {
+    uint32_t seq = get_seq(pkt);
+    uint8_t flags = get_flags(pkt);
+    int fin_acked = 0;
+
+    // 若该包同时带 ACK 且确认了我方 FIN（FIN_WAIT_1 下的 FIN+ACK）
+    if ((flags & ACK_FLAG_MASK) && sock->state == FIN_WAIT_1)
+    {
+        uint32_t ack = get_ack(pkt);
+        if (ack == sock->window.wnd_send->nextseq)
+        {
+            sock->window.wnd_send->base = ack;
+            fin_acked = 1;
+        }
+    }
+
+    // 回 ACK 确认对方 FIN（FIN 占一个序号）
+    sock->window.wnd_recv->expect_seq = seq + 1;
+    send_ack(sock);
+
+    if (sock->state == ESTABLISHED)
+    {
+        // 被动关闭：对方先调用 close
+        sock->state = CLOSE_WAIT;
 #ifdef DEBUG
-    printf("[TODO M2] recv FIN, socket state=%d\n", sock->state);
-#else
-    (void)sock;
-    (void)pkt;
+        printf("[passive] recv FIN(seq=%u) -> ACK, CLOSE_WAIT\n", seq);
 #endif
+    }
+    else if (sock->state == FIN_WAIT_1)
+    {
+        if (fin_acked)
+        {
+            // 同时关闭，对方 FIN+ACK 已确认我方 FIN → 直接 TIME_WAIT
+            sock->state = TIME_WAIT;
+            pthread_mutex_lock(&(sock->recv_lock));
+            pthread_cond_signal(&(sock->wait_cond));
+            pthread_mutex_unlock(&(sock->recv_lock));
+#ifdef DEBUG
+            printf("[simultaneous] recv FIN+ACK -> TIME_WAIT\n");
+#endif
+        }
+        else
+        {
+            // 同时关闭，但我方 FIN 尚未被确认 → CLOSING
+            sock->state = CLOSING;
+#ifdef DEBUG
+            printf("[simultaneous] recv FIN -> ACK, CLOSING\n");
+#endif
+        }
+    }
+    else if (sock->state == FIN_WAIT_2)
+    {
+        // 主动关闭第二阶段，收到对方 FIN
+        sock->state = TIME_WAIT;
+        pthread_mutex_lock(&(sock->recv_lock));
+        pthread_cond_signal(&(sock->wait_cond));
+        pthread_mutex_unlock(&(sock->recv_lock));
+#ifdef DEBUG
+        printf("[active] FIN_WAIT_2 recv FIN -> ACK, TIME_WAIT\n");
+#endif
+    }
 }
 
-/* 收到 ACK：M1 完成握手最后一步并唤醒 connect/accept；M3 滑动窗口、累计确认、采样RTT、统计重复ACK */
 static void handle_ack(tju_tcp_t *sock, char *pkt)
 {
     uint32_t ack = get_ack(pkt);
 
-    /* 服务端：SYN_RECV 收到客户端第三段 ACK -> 握手完成 */
+    /* 服务端：SYN_RECV 收到第三段 ACK -> 握手完成 */
     if (sock->state == SYN_RECV)
     {
-        sock->window.wnd_send->base = ack; // 确认了我方 SYN
+        sock->window.wnd_send->base = ack;
         sock->state = ESTABLISHED;
-        // 放入 accept 队列，唤醒阻塞的 tju_accept
         pthread_mutex_lock(&g_accept_lock);
         g_accept_queue = sock;
         pthread_cond_signal(&g_accept_cond);
@@ -347,6 +422,54 @@ static void handle_ack(tju_tcp_t *sock, char *pkt)
 #ifdef DEBUG
         printf("[server] recv ACK(ack=%u) -> ESTABLISHED, ready for accept\n", ack);
 #endif
+        return;
+    }
+
+    /* 主动关闭：FIN_WAIT_1 收到我方 FIN 的 ACK -> FIN_WAIT_2 */
+    if (sock->state == FIN_WAIT_1)
+    {
+        if (ack == sock->window.wnd_send->nextseq)
+        {
+            sock->window.wnd_send->base = ack;
+            sock->state = FIN_WAIT_2;
+#ifdef DEBUG
+            printf("[active] FIN_WAIT_1 recv ACK(ack=%u) -> FIN_WAIT_2\n", ack);
+#endif
+        }
+        return;
+    }
+
+    /* 同时关闭：CLOSING 收到我方 FIN 的 ACK -> TIME_WAIT */
+    if (sock->state == CLOSING)
+    {
+        if (ack == sock->window.wnd_send->nextseq)
+        {
+            sock->window.wnd_send->base = ack;
+            sock->state = TIME_WAIT;
+            pthread_mutex_lock(&(sock->recv_lock));
+            pthread_cond_signal(&(sock->wait_cond));
+            pthread_mutex_unlock(&(sock->recv_lock));
+#ifdef DEBUG
+            printf("[simultaneous] CLOSING recv ACK -> TIME_WAIT\n");
+#endif
+        }
+        return;
+    }
+
+    /* 被动关闭：LAST_ACK 收到我方 FIN 的 ACK -> CLOSED */
+    if (sock->state == LAST_ACK)
+    {
+        if (ack == sock->window.wnd_send->nextseq)
+        {
+            sock->window.wnd_send->base = ack;
+            sock->state = CLOSED;
+            pthread_mutex_lock(&(sock->recv_lock));
+            pthread_cond_signal(&(sock->wait_cond));
+            pthread_mutex_unlock(&(sock->recv_lock));
+#ifdef DEBUG
+            printf("[passive] LAST_ACK recv ACK -> CLOSED\n");
+#endif
+        }
         return;
     }
 
@@ -404,6 +527,75 @@ int tju_handle_packet(tju_tcp_t *sock, char *pkt)
     return 0;
 }
 
-int tju_close (tju_tcp_t* sock){
+int tju_close(tju_tcp_t *sock)
+{
+    /* ---- 情况1：ESTABLISHED 主动关闭 ---- */
+    if (sock->state == ESTABLISHED)
+    {
+        uint32_t fin_seq = sock->window.wnd_send->nextseq;
+        // 发 FIN+ACK：FIN 占一个序号，同时确认对方数据
+        send_packet(sock, NULL, 0, FIN_FLAG_MASK | ACK_FLAG_MASK,
+                    fin_seq, sock->window.wnd_recv->expect_seq);
+        sock->window.wnd_send->nextseq = fin_seq + 1;
+        sock->state = FIN_WAIT_1;
+#ifdef DEBUG
+        printf("[close] send FIN+ACK(seq=%u) -> FIN_WAIT_1\n", fin_seq);
+#endif
+        // 阻塞等待，直到接收线程把状态推进到 TIME_WAIT 或 CLOSED
+        pthread_mutex_lock(&(sock->recv_lock));
+        while (sock->state != TIME_WAIT && sock->state != CLOSED)
+        {
+            pthread_cond_wait(&(sock->wait_cond), &(sock->recv_lock));
+        }
+        pthread_mutex_unlock(&(sock->recv_lock));
+
+        // TIME_WAIT：等待 2×MSL 后释放
+        if (sock->state == TIME_WAIT)
+        {
+#ifdef DEBUG
+            printf("[close] TIME_WAIT, waiting 2*MSL=%d ms\n", 2 * TJU_MSL_MS);
+#endif
+            usleep(2 * TJU_MSL_MS * 1000);
+            sock->state = CLOSED;
+        }
+        free_tcp(sock);
+        return 0;
+    }
+
+    /* ---- 情况2：CLOSE_WAIT 被动关闭（已收到对方 FIN，应用层现在调用 close）---- */
+    if (sock->state == CLOSE_WAIT)
+    {
+        uint32_t fin_seq = sock->window.wnd_send->nextseq;
+        send_packet(sock, NULL, 0, FIN_FLAG_MASK | ACK_FLAG_MASK,
+                    fin_seq, sock->window.wnd_recv->expect_seq);
+        sock->window.wnd_send->nextseq = fin_seq + 1;
+        sock->state = LAST_ACK;
+#ifdef DEBUG
+        printf("[close] CLOSE_WAIT send FIN+ACK(seq=%u) -> LAST_ACK\n", fin_seq);
+#endif
+        // 阻塞等待对方最后一个 ACK
+        pthread_mutex_lock(&(sock->recv_lock));
+        while (sock->state != CLOSED)
+        {
+            pthread_cond_wait(&(sock->wait_cond), &(sock->recv_lock));
+        }
+        pthread_mutex_unlock(&(sock->recv_lock));
+        free_tcp(sock);
+        return 0;
+    }
+
+    /* ---- 情况3：已在关闭过程中（重复调用 close），等待完成 ---- */
+    pthread_mutex_lock(&(sock->recv_lock));
+    while (sock->state != TIME_WAIT && sock->state != CLOSED)
+    {
+        pthread_cond_wait(&(sock->wait_cond), &(sock->recv_lock));
+    }
+    pthread_mutex_unlock(&(sock->recv_lock));
+    if (sock->state == TIME_WAIT)
+    {
+        usleep(2 * TJU_MSL_MS * 1000);
+        sock->state = CLOSED;
+    }
+    free_tcp(sock);
     return 0;
 }
