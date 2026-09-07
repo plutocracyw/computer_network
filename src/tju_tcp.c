@@ -63,6 +63,35 @@ static void send_ack(tju_tcp_t *sock)
     send_packet(sock, NULL, 0, ACK_FLAG_MASK, seq, ack);
 }
 
+/* 发送端滑动窗口：按 rwnd 尽可能发送缓冲中未发送的数据 */
+static void flush_send(tju_tcp_t *sock)
+{
+    pthread_mutex_lock(&(sock->send_lock));
+    sender_window_t *sw = sock->window.wnd_send;
+    uint32_t window = sw->rwnd;                  // M3 只受 rwnd 约束
+    uint32_t in_flight = sw->nextseq - sw->base; // 在途未确认数据
+    uint32_t available = (window > in_flight) ? (window - in_flight) : 0;
+    uint32_t unsent = sock->sending_len - (sw->nextseq - sw->base);
+
+    while (available > 0 && unsent > 0)
+    {
+        uint32_t seg_len = SMSS;
+        if (seg_len > available)
+            seg_len = available;
+        if (seg_len > unsent)
+            seg_len = unsent;
+
+        uint32_t seq = sw->nextseq;
+        uint32_t offset = seq - sw->base;
+        send_packet(sock, sock->sending_buf + offset, (uint16_t)seg_len,
+                    ACK_FLAG_MASK, seq, sock->window.wnd_recv->expect_seq);
+        sw->nextseq += seg_len;
+        available -= seg_len;
+        unsent -= seg_len;
+    }
+    pthread_mutex_unlock(&(sock->send_lock));
+}
+
 /* 已完成三次握手、等待 tju_accept 取走的连接*/
 static tju_tcp_t *g_accept_queue = NULL;
 static pthread_mutex_t g_accept_lock = PTHREAD_MUTEX_INITIALIZER;
@@ -235,52 +264,45 @@ int tju_connect(tju_tcp_t *sock, tju_sock_addr target_addr)
     return 0;
 }
 
-int tju_send(tju_tcp_t* sock, const void *buffer, int len){
-    // 这里当然不能直接简单地调用sendToLayer3
-    char* data = malloc(len);
-    memcpy(data, buffer, len);
+int tju_send(tju_tcp_t *sock, const void *buffer, int len)
+{
+    if (len <= 0)
+        return 0;
+    pthread_mutex_lock(&(sock->send_lock));
+    // 数据先入发送缓冲
+    sock->sending_buf = realloc(sock->sending_buf, sock->sending_len + len);
+    memcpy(sock->sending_buf + sock->sending_len, buffer, len);
+    sock->sending_len += len;
+    pthread_mutex_unlock(&(sock->send_lock));
 
-    char* msg;
-    uint32_t seq = 464;
-    uint16_t plen = DEFAULT_HEADER_LEN + len;
-
-    msg = create_packet_buf(sock->established_local_addr.port, sock->established_remote_addr.port, seq, 0, 
-              DEFAULT_HEADER_LEN, plen, NO_FLAG, 1, 0, data, len);
-
-    sendToLayer3(msg, plen);
-    
-    return 0;
+    flush_send(sock); // 按窗口立即发送
+    return len;
 }
-int tju_recv(tju_tcp_t* sock, void *buffer, int len){
-    while(sock->received_len<=0){
-        // 阻塞
+
+int tju_recv(tju_tcp_t *sock, void *buffer, int len)
+{
+    pthread_mutex_lock(&(sock->recv_lock));
+    // 阻塞等待，直到有按序数据可读
+    while (sock->received_len <= 0)
+    {
+        pthread_cond_wait(&(sock->wait_cond), &(sock->recv_lock));
     }
-
-    while(pthread_mutex_lock(&(sock->recv_lock)) != 0); // 加锁
-
-    int read_len = 0;
-    if (sock->received_len >= len){ // 从中读取len长度的数据
-        read_len = len;
-    }else{
-        read_len = sock->received_len; // 读取sock->received_len长度的数据(全读出来)
-    }
-
+    int read_len = len;
+    if (read_len > sock->received_len)
+        read_len = sock->received_len;
     memcpy(buffer, sock->received_buf, read_len);
-
-    if(read_len < sock->received_len) { // 还剩下一些
-        char* new_buf = malloc(sock->received_len - read_len);
-        memcpy(new_buf, sock->received_buf + read_len, sock->received_len - read_len);
-        free(sock->received_buf);
+    if (read_len < sock->received_len)
+    {
+        // 剩余数据移到缓冲前部
+        memmove(sock->received_buf, sock->received_buf + read_len, sock->received_len - read_len);
         sock->received_len -= read_len;
-        sock->received_buf = new_buf;
-    }else{
-        free(sock->received_buf);
-        sock->received_buf = NULL;
+    }
+    else
+    {
         sock->received_len = 0;
     }
-    pthread_mutex_unlock(&(sock->recv_lock)); // 解锁
-
-    return 0;
+    pthread_mutex_unlock(&(sock->recv_lock));
+    return read_len; // 返回实际读取字节数（修复基线恒返回0的bug）
 }
 
 //第二阶段：报文内部分发
@@ -473,28 +495,60 @@ static void handle_ack(tju_tcp_t *sock, char *pkt)
         return;
     }
 
-    /* TODO(M3): ESTABLISHED 下的数据 ACK：滑动窗口、累计确认、RTT 采样、重复 ACK 计数 */
+    /* ESTABLISHED：数据 ACK，推进发送窗口、累计确认 */
+    if (sock->state == ESTABLISHED)
+    {
+        uint16_t adv = get_advertised_window(pkt);
+        sock->window.wnd_send->rwnd = adv; // 更新对方通告窗口
+
+        pthread_mutex_lock(&(sock->send_lock));
+        if (ack > sock->window.wnd_send->base)
+        {
+            // 确认了新数据：从发送缓冲前部移除已确认部分
+            uint32_t acked = ack - sock->window.wnd_send->base;
+            if (acked > (uint32_t)sock->sending_len)
+                acked = sock->sending_len;
+            sock->sending_len -= acked;
+            if (sock->sending_len > 0)
+            {
+                memmove(sock->sending_buf, sock->sending_buf + acked, sock->sending_len);
+            }
+            sock->window.wnd_send->base = ack;
+            sock->window.wnd_send->dupack = 0;
+        }
+        else if (ack == sock->window.wnd_send->base && ack > 0)
+        {
+            sock->window.wnd_send->dupack++; // 重复 ACK（M5 快速重传用）
+        }
+        pthread_mutex_unlock(&(sock->send_lock));
+
+        flush_send(sock); // 窗口滑动后尝试发送更多
+        return;
+    }
 }
 
-/* 数据载荷入接收缓冲：现阶段保留基线"直接追加"行为；M3 改为按 expect_seq 重组并回 ACK */
-static void append_payload(tju_tcp_t *sock, char *pkt, uint32_t data_len)
+/* 处理收到的数据载荷：按 expect_seq 按序交付，回累计 ACK */
+static void handle_data(tju_tcp_t *sock, char *pkt, uint32_t data_len)
 {
     if (data_len <= 0)
         return;
-    while (pthread_mutex_lock(&(sock->recv_lock)) != 0)
-        ; // 加锁
-    if (sock->received_buf == NULL)
+    uint32_t seq = get_seq(pkt);
+
+    pthread_mutex_lock(&(sock->recv_lock));
+    if (seq == sock->window.wnd_recv->expect_seq)
     {
-        sock->received_buf = malloc(data_len);
-    }
-    else
-    {
+        // 按序到达：追加到接收缓冲，推进期望序号
         sock->received_buf = realloc(sock->received_buf, sock->received_len + data_len);
+        memcpy(sock->received_buf + sock->received_len, pkt + DEFAULT_HEADER_LEN, data_len);
+        sock->received_len += data_len;
+        sock->window.wnd_recv->expect_seq += data_len;
+        pthread_cond_signal(&(sock->wait_cond)); // 唤醒阻塞的 tju_recv
     }
-    memcpy(sock->received_buf + sock->received_len, pkt + DEFAULT_HEADER_LEN, data_len);
-    sock->received_len += data_len;
-    pthread_cond_signal(&(sock->wait_cond));  // 数据到达，唤醒可能阻塞的 tju_recv（M3 配套使用）
-    pthread_mutex_unlock(&(sock->recv_lock)); // 解锁
+    // 乱序(seq > expect_seq)或重复(seq < expect_seq)：数据暂不交付，
+    // 但仍回 ACK(ack=expect_seq)通知对方（乱序缓存在 M4 完善）
+    pthread_mutex_unlock(&(sock->recv_lock));
+
+    send_ack(sock); // 回累计 ACK，ack=expect_seq
 }
 
 /* 统一报文入口：按 标志位 / 是否带载荷 分发 */
@@ -522,7 +576,7 @@ int tju_handle_packet(tju_tcp_t *sock, char *pkt)
     // 4) 有数据载荷：放入接收缓冲
     if (data_len > 0)
     {
-        append_payload(sock, pkt, data_len);
+        handle_data(sock, pkt, data_len);
     }
     return 0;
 }
