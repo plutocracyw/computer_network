@@ -9,20 +9,34 @@ static void stop_timer(tju_tcp_t *sock);
 static void reset_timer(tju_tcp_t *sock);
 static uint16_t calc_adv_window(tju_tcp_t *sock);
 #define FIXED_RTO 500
-/* ========== 调试输出（写文件，避免干扰测试 stdout） ========== */
+/* ========== 调试输出（写文件，避免干扰测试 stdout） ==========
+   hostname只取一次、文件句柄常开带大缓冲、静态锁保证多线程安全，
+   避免每包数万次 gethostname/fopen/fclose 的系统调用开销 ========== */
 static void dbg_printf(const char *fmt, ...)
 {
-    char hn[16];
-    gethostname(hn, sizeof(hn));
-    FILE *fp = fopen("/vagrant/tju_tcp/test/rdt_dbg.log", "a");
-    if (fp == NULL)
-        return;
-    fprintf(fp, "[%s] ", hn);
+    static char hn[16] = {0};
+    static FILE *dbg_fp = NULL;
+    static pthread_mutex_t dbg_lock = PTHREAD_MUTEX_INITIALIZER;
+    if (hn[0] == 0)
+        gethostname(hn, sizeof(hn));
+    pthread_mutex_lock(&dbg_lock);
+    if (dbg_fp == NULL)
+    {
+        dbg_fp = fopen("/vagrant/tju_tcp/test/rdt_dbg.log", "a");
+        if (dbg_fp == NULL)
+        {
+            pthread_mutex_unlock(&dbg_lock);
+            return;
+        }
+        static char dbg_iobuf[1 << 16];
+        setvbuf(dbg_fp, dbg_iobuf, _IOFBF, sizeof(dbg_iobuf));
+    }
+    fprintf(dbg_fp, "[%s] ", hn);
     va_list ap;
     va_start(ap, fmt);
-    vfprintf(fp, fmt, ap);
+    vfprintf(dbg_fp, fmt, ap);
     va_end(ap);
-    fclose(fp);
+    pthread_mutex_unlock(&dbg_lock);
 }
 /* ========== 构建/发送分离：build 在锁内，send_out 在锁外 ========== */
 typedef struct
@@ -571,7 +585,6 @@ static void handle_data(tju_tcp_t *sock, char *pkt, uint32_t data_len)
 {
     if (data_len <= 0)
         return;
-    dbg_printf("RECV_DATA seq=%u len=%u expect=%u\n", get_seq(pkt), data_len, sock->window.wnd_recv->expect_seq);
     uint32_t seq = get_seq(pkt);
     uint32_t end = seq + data_len;
     receiver_window_t *rw = sock->window.wnd_recv;
@@ -764,6 +777,7 @@ static void handle_ack(tju_tcp_t *sock, char *pkt)
             sw->base = ack;
             sw->dupack = 0;
             sw->rexmitted = 0;
+            sw->recover_seq = 0;
             sw->rto = FIXED_RTO;
             sock->rexmit_count = 0;
             inflight_remove_acked(sock, ack);
