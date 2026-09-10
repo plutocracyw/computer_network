@@ -777,19 +777,29 @@ static void handle_ack(tju_tcp_t *sock, char *pkt)
         else if (ack == sw->base && ack > 0)
         {
             sw->dupack++;
-            /* 快速重传：3个dup ACK触发；rexmitted保证同一base只快重一次，杜绝风暴 */
+            /* 快速重传：3个dup ACK触发；一次补上在途链表最早的若干疑似丢包，
+               rexmitted保证同一base只触发一次，杜绝风暴 */
             if (sw->dupack >= 3 && !sw->rexmitted && (sw->nextseq > sw->base))
             {
-                pkt_t fpkt = build_pkt(sock, sock->sending_buf, (uint16_t)SMSS,
-                                       ACK_FLAG_MASK, sw->base, sock->window.wnd_recv->expect_seq);
-                dbg_printf("FASTXMIT base=%u dupack=%d\n", sw->base, sw->dupack);
-                sw->rexmitted = 1;
-                /* 同步在途链表中该包的发送时间，避免SR立刻重复重传 */
+                pkt_t fpkts[SR_REXMIT_MAX];
+                int nfpkt = 0;
                 inflight_node_t *c = sock->inflight_head;
-                if (c != NULL && c->seq == sw->base)
-                    gettimeofday(&(c->send_time), NULL);
+                struct timeval fnow;
+                gettimeofday(&fnow, NULL);
+                while (c != NULL && nfpkt < SR_REXMIT_MAX)
+                {
+                    uint32_t off = c->seq - sw->base;
+                    fpkts[nfpkt] = build_pkt(sock, sock->sending_buf + off, (uint16_t)c->len,
+                                             ACK_FLAG_MASK, c->seq, sock->window.wnd_recv->expect_seq);
+                    c->send_time = fnow; /* 同步计时，避免SR立刻重复重传 */
+                    nfpkt++;
+                    c = c->next;
+                }
+                dbg_printf("FASTXMIT %d pkts base=%u dupack=%d\n", nfpkt, sw->base, sw->dupack);
+                sw->rexmitted = 1;
                 pthread_mutex_unlock(&(sock->send_lock));
-                send_out(fpkt);
+                for (int i = 0; i < nfpkt; i++)
+                    send_out(fpkts[i]);
                 flush_send(sock);
                 return;
             }
