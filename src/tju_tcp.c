@@ -186,8 +186,8 @@ static void retransmit_control(tju_tcp_t *sock)
     }
 }
 /* SR 定时器：固定小间隔唤醒检查；数据包超时阈值固定 */
-#define SR_TICK_MS 10
-#define SR_RTO_MS 50
+#define SR_TICK_MS 20
+#define SR_RTO_MS 100
 #define SR_REXMIT_MAX 4
 static void *timer_thread_func(void *arg)
 {
@@ -777,6 +777,22 @@ static void handle_ack(tju_tcp_t *sock, char *pkt)
         else if (ack == sw->base && ack > 0)
         {
             sw->dupack++;
+            /* 快速重传：3个dup ACK触发；rexmitted保证同一base只快重一次，杜绝风暴 */
+            if (sw->dupack >= 3 && !sw->rexmitted && (sw->nextseq > sw->base))
+            {
+                pkt_t fpkt = build_pkt(sock, sock->sending_buf, (uint16_t)SMSS,
+                                       ACK_FLAG_MASK, sw->base, sock->window.wnd_recv->expect_seq);
+                dbg_printf("FASTXMIT base=%u dupack=%d\n", sw->base, sw->dupack);
+                sw->rexmitted = 1;
+                /* 同步在途链表中该包的发送时间，避免SR立刻重复重传 */
+                inflight_node_t *c = sock->inflight_head;
+                if (c != NULL && c->seq == sw->base)
+                    gettimeofday(&(c->send_time), NULL);
+                pthread_mutex_unlock(&(sock->send_lock));
+                send_out(fpkt);
+                flush_send(sock);
+                return;
+            }
             pthread_mutex_unlock(&(sock->send_lock));
             flush_send(sock);
             return;
