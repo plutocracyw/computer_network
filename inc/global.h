@@ -38,7 +38,7 @@
 
 /* RTT/RTO 相关，单位毫秒（RFC6298；最终取值以《说明书v2》为准）*/
 #define RTO_INIT_MS 1000 // 数据阶段初始 RTO = 1s
-#define RTO_MIN_MS 200	 // RTO 下限（教学取值）
+#define RTO_MIN_MS 50	 // RTO 下限（6ms RTT 环境下 50ms 足够，丢包恢复更快）
 #define RTO_MAX_MS 3000	 // RTO 上限；SYN 重传后数据阶段重置为 3s
 #define MAX_RXT 12		 // 单个报文最大重传次数（教学取值）
 
@@ -69,7 +69,7 @@
 // TCP 发送窗口
 typedef struct
 {
-	uint16_t window_size;	  // 保留：本端通告窗口
+	uint32_t window_size;	  // 快速恢复时保存原 cwnd；>0 表示处于快速恢复中
 	uint32_t base;			  // SND.UNA：最早已发未确认序号
 	uint32_t nextseq;		  // SND.NXT：下一个待发序号
 	uint32_t rwnd;			  // 接收方通告窗口（流量控制）
@@ -80,15 +80,37 @@ typedef struct
 	uint32_t rto;			  // 当前重传超时（毫秒）
 	uint8_t rtt_ready;		  // 是否已取得首个 RTT 样本
 	int dupack;				  // 重复 ACK 计数（达 3 触发快速重传）
+	uint8_t rexmitted;		  // Karn算法：自上次采样以来是否发生过重传（重传段的ACK不采样RTT）
 	struct timeval send_time; // 最早未确认报文的发送时刻
 } sender_window_t;
 
 // TCP 接受窗口（第二阶段启用期望序号）
+/* 乱序段缓存节点（按 seq 升序链表） */
+typedef struct ooo_node
+{
+	uint32_t seq;
+	uint32_t len;
+	char *data;
+	struct ooo_node *next;
+} ooo_node_t;
+
+/* 在途包节点（选择重传：每包独立发送时间） */
+typedef struct inflight_node
+{
+	uint32_t seq;
+	uint32_t len;
+	struct timeval send_time;
+	struct inflight_node *next;
+} inflight_node_t;
+
+// TCP 接受窗口（第二阶段启用期望序号 + 乱序缓存）
 typedef struct
 {
 	char received[TCP_RECVWN_SIZE];
-	uint32_t expect_seq; // RCV.NXT：下一个期望收到的字节序号
-	uint32_t adv_window; // 即将通告给对方的可用接收窗口
+	uint32_t expect_seq;  // RCV.NXT：下一个期望收到的字节序号
+	uint32_t adv_window;  // 即将通告给对方的可用接收窗口
+	ooo_node_t *ooo_head; // 乱序段链表头
+	uint32_t ooo_bytes;	  // 乱序缓存中数据总字节数（用于无锁计算adv_window）
 } receiver_window_t;
 
 // TCP 窗口 每个建立了连接的TCP都包括发送和接受两个窗口
@@ -118,13 +140,22 @@ typedef struct
 	char *received_buf;					   // 接收数据缓存区
 	int received_len;					   // 接收数据缓存长度
 	pthread_cond_t wait_cond;			   // 可以被用来唤醒recv函数调用时等待的线程
+	pthread_cond_t send_cond;			   // 独立发送线程的条件变量
+	uint8_t send_thread_on;				   // 发送线程是否运行
 	window_t window;					   // 发送和接受两个窗口
 	/* ===== 第二阶段新增 ===== */
 	uint32_t iss;				// 本端初始序号 ISN
 	pthread_t timer_thread;		// 每连接一个的重传定时器线程
+	pthread_t send_thread;			// 独立发送线程
 	uint8_t timer_on;			// 定时器是否正在运行
 	pthread_mutex_t timer_lock; // 保护定时器/RTO 的锁
 	pthread_cond_t timer_cond;	// 定时器等待与提前唤醒
+	uint32_t sending_offset;
+	/* ===== 第二阶段补充：连接管理与关闭控制 ===== */
+	uint8_t peer_fin;	   // 对端已发送 FIN（tju_recv 应返回 0）
+	uint8_t syn_rexmitted; // SYN 阶段是否发生过重传（连接建立后 RTO 重置为 3s）
+	uint8_t rexmit_count;  // 当前控制报文/数据重传次数计数（达 MAX_RXT 终止）
+	inflight_node_t *inflight_head; // 选择重传：在途包链表头
 } tju_tcp_t;
 
 #endif
