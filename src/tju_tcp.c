@@ -328,7 +328,7 @@ static void reset_timer(tju_tcp_t *sock)
     pthread_mutex_unlock(&(sock->timer_lock));
 }
 /* ===================== 发送端滑动窗口（锁内构建，锁外发送） ===================== */
-#define MAX_BURST 16
+#define MAX_BURST 24
 static void flush_send(tju_tcp_t *sock)
 {
     pkt_t pkts[MAX_BURST];
@@ -391,8 +391,8 @@ tju_tcp_t *tju_socket()
     memset(sock->window.wnd_send, 0, sizeof(sender_window_t));
     sender_window_t *sw = sock->window.wnd_send;
     sw->rwnd = 65535;
-    sw->cwnd = 24 * SMSS;
-    sw->ssthresh = 24 * SMSS;
+    sw->cwnd = 40 * SMSS;
+    sw->ssthresh = 40 * SMSS;
     sw->window_size = 65535;
     sw->rto = FIXED_RTO;
     sock->window.wnd_recv = (receiver_window_t *)malloc(sizeof(receiver_window_t));
