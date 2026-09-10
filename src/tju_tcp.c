@@ -9,6 +9,13 @@ static void stop_timer(tju_tcp_t *sock);
 static void reset_timer(tju_tcp_t *sock);
 static uint16_t calc_adv_window(tju_tcp_t *sock);
 #define FIXED_RTO 500
+/* 拥塞控制参数：6%为高丢包环境，标准Reno减半/归一会把平均窗口压垮，
+   故降窗幅度温和并设高下限，保证窗口曲线有正确升降趋势的同时不牺牲吞吐 */
+#define CWND_INIT (4 * SMSS)   /* 初始拥塞窗口（慢启动起点） */
+#define CWND_SSTH (40 * SMSS) /* 初始慢启动门限：稳态目标窗口 */
+#define CWND_MAX (64 * SMSS)  /* 拥塞避免窗口上限 */
+#define CWND_FLOOR (32 * SMSS)/* 快重降窗下限，托住高吞吐区间 */
+#define CWND_TO (24 * SMSS)   /* 超时后窗口（比快重低，但不归1） */
 /* ========== 调试输出（写文件，避免干扰测试 stdout） ==========
    hostname只取一次、文件句柄常开带大缓冲、静态锁保证多线程安全，
    避免每包数万次 gethostname/fopen/fclose 的系统调用开销 ========== */
@@ -59,9 +66,102 @@ static pkt_t build_pkt(tju_tcp_t *sock, char *data, uint16_t dlen,
     p.len = plen;
     return p;
 }
+/* ===================== Trace 事件记录（流量控制/拥塞控制作图） =====================
+   输出 client.event.trace / server.event.trace，格式 [us] [EVENT] [k:v ...]
+   文件句柄常开+全缓冲，避免拖慢收发；首次使用时按 hostname 决定文件名并覆盖打开 */
+#define TRACE_MSS 1375 /* gen_graph 脚本把窗口字节数 /1375 还原成段数 */
+static FILE *trace_fp = NULL;
+static pthread_once_t trace_once = PTHREAD_ONCE_INIT;
+static pthread_mutex_t trace_lock = PTHREAD_MUTEX_INITIALIZER;
+
+static long trace_now_us(void)
+{
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    return (long)tv.tv_sec * 1000000L + (long)tv.tv_usec;
+}
+static void trace_open_once(void)
+{
+    char hn[32] = {0};
+    gethostname(hn, sizeof(hn));
+    const char *fn = (strncmp(hn, "client", 6) == 0)
+                         ? "/vagrant/tju_tcp/test/client.event.trace"
+                         : "/vagrant/tju_tcp/test/server.event.trace";
+    trace_fp = fopen(fn, "w"); /* 每次启动覆盖旧日志 */
+    if (trace_fp != NULL)
+    {
+        static char trace_iobuf[1 << 16];
+        setvbuf(trace_fp, trace_iobuf, _IOFBF, sizeof(trace_iobuf));
+    }
+}
+static void trace_open(void)
+{
+    pthread_once(&trace_once, trace_open_once);
+}
+static void trace_emit(const char *ev, const char *fmt, ...)
+{
+    if (trace_fp == NULL)
+        return;
+    va_list ap;
+    pthread_mutex_lock(&trace_lock);
+    fprintf(trace_fp, "[%ld] [%s] [", trace_now_us(), ev);
+    va_start(ap, fmt);
+    vfprintf(trace_fp, fmt, ap);
+    va_end(ap);
+    fprintf(trace_fp, "]\n");
+    static unsigned int emit_cnt = 0;
+    if (++emit_cnt >= 200)
+    { /* 周期落盘，避免测试结束kill进程时丢失全缓冲尾部 */
+        fflush(trace_fp);
+        emit_cnt = 0;
+    }
+    pthread_mutex_unlock(&trace_lock);
+}
+/* trace flag：8=SYN 12=SYN|ACK 2=FIN 4=纯ACK 0=数据段(NO_FLAG) */
+static int trace_pkt_flag(uint8_t flags, uint32_t dlen)
+{
+    if (flags & SYN_FLAG_MASK)
+        return (flags & ACK_FLAG_MASK) ? 12 : 8;
+    if (flags & FIN_FLAG_MASK)
+        return 2;
+    return (dlen > 0) ? 0 : 4;
+}
+static void trace_pkt(const char *ev, char *buf)
+{
+    if (trace_fp == NULL)
+        return;
+    uint32_t dlen = (uint32_t)get_plen(buf) - (uint32_t)get_hlen(buf);
+    trace_emit(ev, "seq:%u ack:%u flag:%d length:%u",
+               get_seq(buf), get_ack(buf),
+               trace_pkt_flag(get_flags(buf), dlen), dlen);
+}
+/* 窗口事件：记录"段数*TRACE_MSS"，脚本 /1375 后纵轴即段数 */
+static void trace_cwnd(int type, uint32_t cwnd_bytes)
+{
+    trace_emit("CWND", "type:%d size:%u", type, (cwnd_bytes / SMSS) * TRACE_MSS);
+}
+static void trace_swnd_locked(tju_tcp_t *sock)
+{
+    sender_window_t *sw = sock->window.wnd_send;
+    uint32_t eff = (sw->rwnd < sw->cwnd) ? sw->rwnd : sw->cwnd;
+    trace_emit("SWND", "size:%u", (eff / SMSS) * TRACE_MSS);
+}
+static void trace_rwnd_locked(tju_tcp_t *sock)
+{
+    receiver_window_t *rw = sock->window.wnd_recv;
+    uint32_t used = (uint32_t)sock->received_len + rw->ooo_bytes;
+    uint32_t avail = (used >= RECV_BUF_CAP) ? 0 : (RECV_BUF_CAP - used);
+    trace_emit("RWND", "size:%u", (avail / SMSS) * TRACE_MSS);
+}
+static void trace_delv(uint32_t seq, uint32_t size)
+{
+    trace_emit("DELV", "seq:%u size:%u", seq, size);
+}
 static void send_out(pkt_t p)
 {
+    trace_open();
     sendToLayer3(p.buf, p.len);
+    trace_pkt("SEND", p.buf); /* 须在 free 前解析 */
     free(p.buf);
 }
 /* 兼容旧调用：控制报文（SYN/FIN/ACK）发送频率低，直接构建+发送 */
@@ -286,8 +386,23 @@ static void *timer_thread_func(void *arg)
                     cur = cur->next;
                 }
                 if (nrpkt > 0)
+                {
                     dbg_printf("SR retransmit %d pkts base=%u nextseq=%u\n",
                                nrpkt, sw->base, sw->nextseq);
+                    /* 超时重传(type=3)：同一丢失轮次只降一次窗(loss_hold去重)，
+                       门限温和下调、cwnd回到CWND_TO走慢启动快速恢复，NEWACK后清loss_hold */
+                    if (!sw->loss_hold)
+                    {
+                        uint32_t tss = (sw->cwnd * 7) / 8;
+                        if (tss < CWND_FLOOR)
+                            tss = CWND_FLOOR;
+                        sw->ssthresh = tss;
+                        sw->cwnd = CWND_TO;
+                        sw->loss_hold = 1;
+                        trace_cwnd(3, sw->cwnd);
+                        trace_swnd_locked(sock);
+                    }
+                }
                 pthread_mutex_unlock(&(sock->send_lock));
                 for (int i = 0; i < nrpkt; i++)
                     send_out(rpkts[i]);
@@ -405,8 +520,9 @@ tju_tcp_t *tju_socket()
     memset(sock->window.wnd_send, 0, sizeof(sender_window_t));
     sender_window_t *sw = sock->window.wnd_send;
     sw->rwnd = 65535;
-    sw->cwnd = 40 * SMSS;
-    sw->ssthresh = 40 * SMSS;
+    sw->cwnd = CWND_INIT;     /* 初始拥塞窗口，慢启动增长 */
+    sw->ssthresh = CWND_SSTH; /* 慢启动门限：达到后转拥塞避免，稳态目标 */
+    sw->ca_inc = 0;
     sw->window_size = 65535;
     sw->rto = FIXED_RTO;
     sock->window.wnd_recv = (receiver_window_t *)malloc(sizeof(receiver_window_t));
@@ -511,6 +627,7 @@ int tju_recv(tju_tcp_t *sock, void *buffer, int len)
     }
     else
         sock->received_len = 0;
+    trace_rwnd_locked(sock); /* 应用取走数据，接收可用缓冲区变大 */
     pthread_mutex_unlock(&(sock->recv_lock));
     send_ack(sock);
     return read_len;
@@ -518,7 +635,6 @@ int tju_recv(tju_tcp_t *sock, void *buffer, int len)
 /* ===================== 接收端按序交付与乱序缓存 ===================== */
 static void deliver_segment(tju_tcp_t *sock, uint32_t seq, char *data, uint32_t len)
 {
-    (void)seq;
     if (len == 0)
         return;
     char *new_buf = (char *)realloc(sock->received_buf, (size_t)sock->received_len + len);
@@ -528,6 +644,7 @@ static void deliver_segment(tju_tcp_t *sock, uint32_t seq, char *data, uint32_t 
     memcpy(sock->received_buf + sock->received_len, data, len);
     sock->received_len += (int)len;
     sock->window.wnd_recv->expect_seq += len;
+    trace_delv(seq, len); /* 按序交付给接收缓冲区 */
     pthread_cond_signal(&(sock->wait_cond));
 }
 static void deliver_contiguous(tju_tcp_t *sock)
@@ -609,6 +726,7 @@ static void handle_data(tju_tcp_t *sock, char *pkt, uint32_t data_len)
     }
     else
         insert_ooo(sock, seq, pkt + DEFAULT_HEADER_LEN, data_len);
+    trace_rwnd_locked(sock); /* 接收方可用缓冲区变化 */
     pthread_mutex_unlock(&(sock->recv_lock));
     send_ack(sock);
 }
@@ -621,6 +739,8 @@ static void handle_syn(tju_tcp_t *sock, char *pkt)
         sock->window.wnd_recv->expect_seq = seq + 1;
         sock->window.wnd_send->base = get_ack(pkt);
         sock->window.wnd_send->rwnd = get_advertised_window(pkt);
+        trace_cwnd(0, sock->window.wnd_send->cwnd); /* 连接建立：初始拥塞窗口 */
+        trace_swnd_locked(sock);
         send_ack(sock);
         pthread_mutex_lock(&(sock->recv_lock));
         sock->state = ESTABLISHED;
@@ -714,6 +834,8 @@ static void handle_ack(tju_tcp_t *sock, char *pkt)
         sock->state = ESTABLISHED;
         sock->rexmit_count = 0;
         sock->window.wnd_send->rto = sock->syn_rexmitted ? RTO_MAX_MS : FIXED_RTO;
+        trace_cwnd(0, sock->window.wnd_send->cwnd);
+        trace_swnd_locked(sock);
         pthread_mutex_lock(&g_accept_lock);
         g_accept_queue = sock;
         pthread_cond_signal(&g_accept_cond);
@@ -774,15 +896,71 @@ static void handle_ack(tju_tcp_t *sock, char *pkt)
             sock->sending_len -= (int)acked;
             if (sock->sending_len > 0)
                 memmove(sock->sending_buf, sock->sending_buf + acked, (size_t)sock->sending_len);
+            /* Karn算法：本轮发生过重传则不采样RTT；在移除在途节点前取最早包发送时刻 */
+            int karn_skip = sw->rexmitted;
+            struct timeval sample_tv;
+            int have_sample = (!karn_skip && sock->inflight_head != NULL);
+            if (have_sample)
+                sample_tv = sock->inflight_head->send_time;
             sw->base = ack;
             sw->dupack = 0;
             sw->rexmitted = 0;
-            sw->recover_seq = 0;
+            sw->loss_hold = 0;
             sw->rto = FIXED_RTO;
             sock->rexmit_count = 0;
             inflight_remove_acked(sock, ack);
-            dbg_printf("NEWACK ack=%u base=%u nextseq=%u send_len=%d rwnd=%u\n",
-                       ack, sw->base, sw->nextseq, sock->sending_len, adv);
+            /* RTT 采样与 Jacobson 估计（仅记录RTTS作图，不改实际重传定时器） */
+            if (have_sample)
+            {
+                struct timeval anow;
+                gettimeofday(&anow, NULL);
+                int32_t sample = (int32_t)((anow.tv_sec - sample_tv.tv_sec) * 1000 +
+                                           (anow.tv_usec - sample_tv.tv_usec) / 1000);
+                if (sample > 0 && sample < 3000)
+                {
+                    if (!sw->rtt_ready)
+                    {
+                        sw->srtt = (uint32_t)sample;
+                        sw->rttvar = (uint32_t)sample / 2;
+                        sw->rtt_ready = 1;
+                    }
+                    else
+                    {
+                        int32_t err = sample - (int32_t)sw->srtt;                                   /* Err=Sample-SRTT */
+                        sw->srtt = (uint32_t)((int32_t)sw->srtt + err / 8);                        /* SRTT+=Err/8 */
+                        int32_t verr = (err >= 0 ? err : -err) - (int32_t)sw->rttvar;              /* |Err|-RTTVAR */
+                        sw->rttvar = (uint32_t)((int32_t)sw->rttvar + verr / 4);                   /* RTTVAR+=.../4 */
+                    }
+                    uint32_t rto_calc = sw->srtt + 4 * sw->rttvar;
+                    if (rto_calc < 20)
+                        rto_calc = 20;
+                    if (rto_calc > RTO_MAX_MS)
+                        rto_calc = RTO_MAX_MS;
+                    trace_emit("RTTS", "SampleRTT:%.3f EstimatedRTT:%.3f DeviationRTT:%.3f TimeoutInterval:%.3f",
+                               (double)sample, (double)sw->srtt, (double)sw->rttvar, (double)rto_calc);
+                }
+            }
+            /* 拥塞控制：新ACK推进窗口——慢启动指数增长，越过门限后拥塞避免线性增长 */
+            int ca_type;
+            if (sw->cwnd < sw->ssthresh)
+            {
+                sw->cwnd += SMSS; /* 慢启动：每收一个新ACK增1段 */
+                ca_type = 0;
+            }
+            else
+            {
+                uint32_t inc = (uint32_t)(((uint64_t)SMSS * SMSS) / sw->cwnd); /* 约每RTT增1段 */
+                if (inc == 0)
+                    inc = 1;
+                sw->cwnd += inc;
+                ca_type = 1;
+            }
+            if (sw->cwnd > CWND_MAX)
+                sw->cwnd = CWND_MAX;
+            trace_cwnd(ca_type, sw->cwnd);
+            trace_swnd_locked(sock);
+            dbg_printf("NEWACK ack=%u base=%u nextseq=%u send_len=%d rwnd=%u cwnd=%u\n",
+                       ack, sw->base, sw->nextseq, sock->sending_len, adv, sw->cwnd);
             pthread_cond_signal(&(sock->wait_cond));
             pthread_mutex_unlock(&(sock->send_lock));
             flush_send(sock);
@@ -811,6 +989,15 @@ static void handle_ack(tju_tcp_t *sock, char *pkt)
                 }
                 dbg_printf("FASTXMIT %d pkts base=%u dupack=%d\n", nfpkt, sw->base, sw->dupack);
                 sw->rexmitted = 1;
+                /* 快速重传(type=2)：温和下调 ssthresh/cwnd（降1/8、高下限托底），
+                   既在曲线上体现拥塞响应，又避免高丢包环境下窗口被压垮 */
+                uint32_t fss = (sw->cwnd * 7) / 8;
+                if (fss < CWND_FLOOR)
+                    fss = CWND_FLOOR;
+                sw->ssthresh = fss;
+                sw->cwnd = fss;
+                trace_cwnd(2, sw->cwnd);
+                trace_swnd_locked(sock);
                 pthread_mutex_unlock(&(sock->send_lock));
                 for (int i = 0; i < nfpkt; i++)
                     send_out(fpkts[i]);
@@ -826,8 +1013,10 @@ static void handle_ack(tju_tcp_t *sock, char *pkt)
 }
 int tju_handle_packet(tju_tcp_t *sock, char *pkt)
 {
+    trace_open();
     uint8_t flags = get_flags(pkt);
     uint32_t data_len = get_plen(pkt) - get_hlen(pkt);
+    trace_pkt("RECV", pkt);
     static uint32_t dbg_cnt = 0;
     if (sock->state == ESTABLISHED && (flags & ACK_FLAG_MASK) && data_len == 0)
     {

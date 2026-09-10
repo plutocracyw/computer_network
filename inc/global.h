@@ -81,7 +81,8 @@ typedef struct
 	uint8_t rtt_ready;		  // 是否已取得首个 RTT 样本
 	int dupack;				  // 重复 ACK 计数（达 3 触发快速重传）
 	uint8_t rexmitted;		  // Karn算法：自上次采样以来是否发生过重传（重传段的ACK不采样RTT）
-	uint32_t recover_seq;	  // NewReno快速恢复点：快重时记下nextseq，base未越过它前的NEWACK都是部分ACK
+	uint8_t loss_hold;		  // 拥塞控制：本轮超时已降窗的去重标志，NEWACK后清除
+	uint32_t ca_inc;		  // 拥塞避免阶段累计的增长字节（实现约每RTT增1个SMSS）
 	struct timeval send_time; // 最早未确认报文的发送时刻
 } sender_window_t;
 
