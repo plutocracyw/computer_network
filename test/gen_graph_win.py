@@ -2,6 +2,10 @@
 import matplotlib.pyplot as plt
 import sys
 import numpy as np
+import os
+
+# 输出文件名按 trace 端名加前缀（client_/server_），跑两次互不覆盖
+PREFIX = 'client'
 
 font_size = 15
 
@@ -20,8 +24,8 @@ def plot_win(time_list, win_list, win_type, type=[]):
         plt.legend()
 
     plt.tight_layout(rect=[0, 0.03, 1, 0.95])
-    plt.savefig('/vagrant/tju_tcp/test/%sWindowSize_VS_Time.png'%win_type, dpi=600)
-    print("绘制成功, 图像位于/vagrant/tju_tcp/test/%sWindowSize_VS_Time.png"%win_type)
+    plt.savefig('/vagrant/tju_tcp/test/%s_%sWindowSize_VS_Time.png'%(PREFIX, win_type), dpi=600)
+    print("绘制成功, 图像位于/vagrant/tju_tcp/test/%s_%sWindowSize_VS_Time.png"%(PREFIX, win_type))
     plt.cla()
 
 def plot_all(cwnd_list, rwnd_list, swnd_list):
@@ -33,8 +37,8 @@ def plot_all(cwnd_list, rwnd_list, swnd_list):
     plt.xlabel('Time (s)', fontdict={'size':font_size})
     plt.ylabel('Window Size (segment)', fontdict={'size':font_size})
     plt.tight_layout(rect=[0, 0.03, 1, 0.95])
-    plt.savefig('/vagrant/tju_tcp/test/AllWindowSize_VS_Time.png', dpi=600)
-    print("绘制成功, 图像位于/vagrant/tju_tcp/test/AllWindowSize_VS_Time.png")
+    plt.savefig('/vagrant/tju_tcp/test/%s_AllWindowSize_VS_Time.png'%PREFIX, dpi=600)
+    print("绘制成功, 图像位于/vagrant/tju_tcp/test/%s_AllWindowSize_VS_Time.png"%PREFIX)
     plt.cla()
 
 def plot_rtt(time_list, SampleRTT, EstimatedRTT, DeviationRTT, TimeoutInterval):
@@ -46,8 +50,8 @@ def plot_rtt(time_list, SampleRTT, EstimatedRTT, DeviationRTT, TimeoutInterval):
     plt.xlabel('Time (s)', fontdict={'size':font_size})
     plt.ylabel('Time (ms)', fontdict={'size':font_size})
     plt.tight_layout(rect=[0, 0.03, 1, 0.95])
-    plt.savefig('/vagrant/tju_tcp/test/RTT.png', dpi=600)
-    print("绘制成功, 图像位于/vagrant/tju_tcp/test/RTT_VS_Time.png")
+    plt.savefig('/vagrant/tju_tcp/test/%s_RTT.png'%PREFIX, dpi=600)
+    print("绘制成功, 图像位于/vagrant/tju_tcp/test/%s_RTT_VS_Time.png"%PREFIX)
     plt.cla()
 
 def plot_throughput(time_list, throuput_list, thrp_intv):
@@ -56,8 +60,8 @@ def plot_throughput(time_list, throuput_list, thrp_intv):
     plt.ylabel('throuput (bps)', fontdict={'size':font_size})
     plt.ylim(ymin=0, ymax=max(throuput_list)*1.05)
     plt.tight_layout(rect=[0, 0.03, 1, 0.95])
-    plt.savefig('/vagrant/tju_tcp/test/Throuput.png', dpi=600)
-    print("绘制成功, 图像位于/vagrant/tju_tcp/test/Throuput.png [注: 每%.3fs计算一次瞬时吞吐率]"%thrp_intv)
+    plt.savefig('/vagrant/tju_tcp/test/%s_Throuput.png'%PREFIX, dpi=600)
+    print("绘制成功, 图像位于/vagrant/tju_tcp/test/%s_Throuput.png [注: 每%.3fs计算一次瞬时吞吐率]"%(PREFIX, thrp_intv))
     plt.cla()
 
 def read_trace(file):
@@ -140,6 +144,7 @@ def read_trace(file):
 FILE_TO_READ = '/vagrant/tju_tcp/test/client.event.trace'
 if len(sys.argv)>=2:
 	FILE_TO_READ = sys.argv[1]
+PREFIX = os.path.basename(FILE_TO_READ).split('.')[0]
 print("正在使用 %s Trace文件绘图"%FILE_TO_READ)
 SEND_dic, RECV_dic, CWND_dic, RWND_dic, SWND_dic, RTTS_dic, DELV_dic = read_trace(FILE_TO_READ)
 
