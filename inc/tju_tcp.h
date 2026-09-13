@@ -5,8 +5,13 @@
 #include "tju_packet.h"
 #include "kernel.h"
 
+/* —— 本地自测 —— */
 #define SERVER_IP "172.17.0.3"
 #define CLIENT_IP "172.17.0.2"
+/* —— 线上提交
+#define SERVER_IP "172.17.0.6"
+#define CLIENT_IP "172.17.0.5"
+*/
 
 /*
 创建 TCP socket 

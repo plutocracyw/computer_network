@@ -1,6 +1,7 @@
 #include "tju_tcp.h"
 #include <errno.h>
 #include <stdarg.h>
+#include <time.h>
     /* ========== 前向声明 ========== */
     static void flush_send(tju_tcp_t *sock);
 static void send_ack(tju_tcp_t *sock);
@@ -9,13 +10,15 @@ static void stop_timer(tju_tcp_t *sock);
 static void reset_timer(tju_tcp_t *sock);
 static uint16_t calc_adv_window(tju_tcp_t *sock);
 #define FIXED_RTO 500
-/* 拥塞控制参数：6%为高丢包环境，标准Reno减半/归一会把平均窗口压垮，
-   故降窗幅度温和并设高下限，保证窗口曲线有正确升降趋势的同时不牺牲吞吐 */
-#define CWND_INIT (4 * SMSS)   /* 初始拥塞窗口（慢启动起点） */
-#define CWND_SSTH (40 * SMSS) /* 初始慢启动门限：稳态目标窗口 */
-#define CWND_MAX (64 * SMSS)  /* 拥塞避免窗口上限 */
-#define CWND_FLOOR (32 * SMSS)/* 快重降窗下限，托住高吞吐区间 */
-#define CWND_TO (24 * SMSS)   /* 超时后窗口（比快重低，但不归1） */
+/* ===== 第三阶段：基础 Reno（RFC 5681）初始参数 ===== */
+#define CWND_INIT (3 * SMSS)    /* 初始拥塞窗口 IW：SMSS=1380∈(1095,2190]，RFC5681 规定 IW=3 SMSS */
+#define SSTH_INIT 65535u        /* 初始慢启动门限 = 课程允许的最大接收窗口（16位 advertised_window 上限） */
+/* 发送节拍(pacing)：同一窗口的多个段不允许在同一微秒瞬时灌入网卡。
+   根因——整窗段同刻 sendto，经 netem 固定延迟后同刻"倾倒"到对端，内核调度使相邻段
+   产生 0~0.2ms 的微乱序，一个段晚到即令其后所有段回相同 dupACK，被误判为快重而连环砍窗。
+   段间留 100us 间隔，使进入 qdisc 的时间戳严格递增、出队严格有序，从源头消除微乱序；
+   100us 远小于 RTT(数百ms)，一窗47段发完仅约4.7ms，不影响慢启动/吞吐形态。 */
+#define PACE_NS 100000L
 /* ========== 调试输出（写文件，避免干扰测试 stdout） ==========
    hostname只取一次、文件句柄常开带大缓冲、静态锁保证多线程安全，
    避免每包数万次 gethostname/fopen/fclose 的系统调用开销 ========== */
@@ -299,9 +302,9 @@ static void retransmit_control(tju_tcp_t *sock)
         send_packet(sock, NULL, 0, FIN_FLAG_MASK | ACK_FLAG_MASK, fin_seq, rw->expect_seq);
     }
 }
-/* SR 定时器：固定小间隔唤醒检查；数据包超时阈值固定 */
+/* SR 定时器：固定小间隔唤醒检查；数据段超时阈值采用动态 RTO(RFC6298)，
+   首个 RTT 样本前用 RTO_INIT_MS，避免在高延迟(如单向300ms/RTT≈600ms)下虚假超时 */
 #define SR_TICK_MS 20
-#define SR_RTO_MS 100
 #define SR_REXMIT_MAX 4
 static void *timer_thread_func(void *arg)
 {
@@ -365,7 +368,11 @@ static void *timer_thread_func(void *arg)
             uint32_t in_flight = sw->nextseq - sw->base;
             if (in_flight > 0)
             {
-                /* 选择重传：只重传发送时间真正超过 SR_RTO_MS 的最早若干包 */
+                /* 选择重传：只重传发送时间真正超过动态RTO的最早若干包。
+                   数据段超时阈值 = 已有RTT样本时用Jacobson估计 sw->rto，
+                   尚无样本时用 RFC6298 初始 RTO(RTO_INIT_MS=1s)，
+                   保证300ms高延迟链路首个RTT内不会被虚假判超时 */
+                uint32_t data_rto = sw->rtt_ready ? sw->rto : RTO_INIT_MS;
                 pkt_t rpkts[SR_REXMIT_MAX];
                 int nrpkt = 0;
                 struct timeval now2;
@@ -375,7 +382,7 @@ static void *timer_thread_func(void *arg)
                 {
                     uint32_t elapsed = (uint32_t)((now2.tv_sec - cur->send_time.tv_sec) * 1000 +
                                                   (now2.tv_usec - cur->send_time.tv_usec) / 1000);
-                    if (elapsed >= SR_RTO_MS)
+                    if (elapsed >= data_rto)
                     {
                         uint32_t offset = cur->seq - sw->base;
                         rpkts[nrpkt] = build_pkt(sock, sock->sending_buf + offset, (uint16_t)cur->len,
@@ -389,23 +396,40 @@ static void *timer_thread_func(void *arg)
                 {
                     dbg_printf("SR retransmit %d pkts base=%u nextseq=%u\n",
                                nrpkt, sw->base, sw->nextseq);
-                    /* 超时重传(type=3)：同一丢失轮次只降一次窗(loss_hold去重)，
-                       门限温和下调、cwnd回到CWND_TO走慢启动快速恢复，NEWACK后清loss_hold */
+                    /* Karn算法：超时重传过的段，其ACK不用于RTT采样(重传时刻已刷新send_time，
+                       否则会算出偏小的污染样本)；同时避免与快速重传重复触发，NEWACK后清零 */
+                    sw->rexmitted = 1;
+                    /* 标准Reno RTO响应(RFC5681)：ssthresh=max(FlightSize/2, 2*SMSS)，
+                       cwnd 降到 1 个 SMSS 并重新慢启动；同一丢失轮次用 loss_hold 只降一次，
+                       NEWACK 后清 loss_hold */
                     if (!sw->loss_hold)
                     {
-                        uint32_t tss = (sw->cwnd * 7) / 8;
-                        if (tss < CWND_FLOOR)
-                            tss = CWND_FLOOR;
-                        sw->ssthresh = tss;
-                        sw->cwnd = CWND_TO;
+                        uint32_t flight = sw->nextseq - sw->base; /* FlightSize：已发未累计确认字节 */
+                        uint32_t half_flight = flight / 2;
+                        sw->ssthresh = (half_flight >= 2 * SMSS) ? half_flight : (2 * SMSS);
+                        sw->cwnd = SMSS;          /* 超时后 cwnd 不超过 1 个 SMSS */
+                        sw->ca_state = SLOW_START;/* 重新进入慢启动 */
+                        sw->ca_inc = 0;
                         sw->loss_hold = 1;
+                        /* RFC6298：超时后 RTO 指数退避(×2、上限RTO_MAX_MS)，
+                           Karn 算法下重传期间不采样，待下一个干净ACK样本再收敛 */
+                        uint32_t backoff = sw->rto * 2;
+                        sw->rto = (backoff > RTO_MAX_MS || backoff < sw->rto) ? RTO_MAX_MS : backoff;
                         trace_cwnd(3, sw->cwnd);
                         trace_swnd_locked(sock);
                     }
                 }
-                pthread_mutex_unlock(&(sock->send_lock));
+                /* 锁内按序发送重传段，保证与 flush_send 新段的全局发送顺序一致 */
                 for (int i = 0; i < nrpkt; i++)
+                {
                     send_out(rpkts[i]);
+                    if (i + 1 < nrpkt)
+                    {
+                        struct timespec pace_ts = {0, PACE_NS};
+                        nanosleep(&pace_ts, NULL);
+                    }
+                }
+                pthread_mutex_unlock(&(sock->send_lock));
             }
             else if (sw->rwnd == 0 && (uint32_t)sock->sending_len > 0)
             {
@@ -487,12 +511,22 @@ static void flush_send(tju_tcp_t *sock)
         unsent -= seg_len;
     }
     int need_timer = (sw->nextseq > sw->base) && !sock->timer_on;
-    pthread_mutex_unlock(&(sock->send_lock));
-    /* 锁外批量发送——sendto 可能阻塞，但不影响接收线程 */
+    /* 锁内按序发送：nextseq 推进与实际 sendto 必须在同一临界区，杜绝多线程并发时
+       "后构建的段抢先发出"造成发送顺序与序号顺序颠倒（会被对端误判为乱序而回 dupACK）。
+       段间 pacing 拉开进入 qdisc 的时间戳，避免整窗同刻突发经固定延迟后微乱序。
+       UDP sendto 到本地虚拟网卡不阻塞，一批 pacing 持锁仅数 ms，远小于 RTT，不影响接收 */
     for (int i = 0; i < npkt; i++)
+    {
         send_out(pkts[i]);
+        if (i + 1 < npkt)
+        {
+            struct timespec pace_ts = {0, PACE_NS};
+            nanosleep(&pace_ts, NULL);
+        }
+    }
     if (npkt > 0)
         dbg_printf("FLUSH sent %d segs, first_seq=%u\n", npkt, first_seq);
+    pthread_mutex_unlock(&(sock->send_lock));
     if (need_timer)
         start_timer(sock);
 }
@@ -520,8 +554,9 @@ tju_tcp_t *tju_socket()
     memset(sock->window.wnd_send, 0, sizeof(sender_window_t));
     sender_window_t *sw = sock->window.wnd_send;
     sw->rwnd = 65535;
-    sw->cwnd = CWND_INIT;     /* 初始拥塞窗口，慢启动增长 */
-    sw->ssthresh = CWND_SSTH; /* 慢启动门限：达到后转拥塞避免，稳态目标 */
+    sw->cwnd = CWND_INIT;     /* RFC5681 IW=3 SMSS，慢启动起点 */
+    sw->ssthresh = SSTH_INIT; /* 初始门限=课程最大接收窗口65535 */
+    sw->ca_state = SLOW_START;/* 拥塞控制状态：初始慢启动 */
     sw->ca_inc = 0;
     sw->window_size = 65535;
     sw->rto = FIXED_RTO;
@@ -707,10 +742,14 @@ static void handle_data(tju_tcp_t *sock, char *pkt, uint32_t data_len)
     receiver_window_t *rw = sock->window.wnd_recv;
     pthread_mutex_lock(&(sock->recv_lock));
     if (end <= rw->expect_seq)
-    { /* duplicate */
+    {
+        /* 完全落在已按序交付区间内的冗余副本（如重传副本）：不交付、不推进序号，
+           也不再回 ACK——避免陈旧/重复 ACK 在发送端被累计成 dupACK 而误触发快重 */
+        pthread_mutex_unlock(&(sock->recv_lock));
+        return;
     }
     else if ((uint32_t)sock->received_len + rw->ooo_bytes >= RECV_BUF_CAP)
-    { /* drop */
+    { /* 接收缓冲满：丢弃，但仍在锁外回带最新通告窗口(可能为0)的 ACK */
     }
     else if (seq < rw->expect_seq)
     {
@@ -896,20 +935,25 @@ static void handle_ack(tju_tcp_t *sock, char *pkt)
             sock->sending_len -= (int)acked;
             if (sock->sending_len > 0)
                 memmove(sock->sending_buf, sock->sending_buf + acked, (size_t)sock->sending_len);
-            /* Karn算法：本轮发生过重传则不采样RTT；在移除在途节点前取最早包发送时刻 */
-            int karn_skip = sw->rexmitted;
+            /* Karn算法：本轮发生过重传、或处于快恢复中的"部分确认"，都不采样RTT
+               （部分确认对应的仍是重传段，其 send_time 被刷新过，采样会得到几ms的假样本）；
+               在移除在途节点前取最早包发送时刻 */
+            int fr_partial = (sw->ca_state == FAST_RECOVERY &&
+                              (int32_t)(ack - sw->recovery_point) < 0);
+            int karn_skip = sw->rexmitted || fr_partial;
             struct timeval sample_tv;
             int have_sample = (!karn_skip && sock->inflight_head != NULL);
             if (have_sample)
                 sample_tv = sock->inflight_head->send_time;
             sw->base = ack;
             sw->dupack = 0;
-            sw->rexmitted = 0;
+            if (!fr_partial)
+                sw->rexmitted = 0; /* FR全程保持Karn标记，直到恢复ACK(退出FR)才解除 */
             sw->loss_hold = 0;
-            sw->rto = FIXED_RTO;
             sock->rexmit_count = 0;
             inflight_remove_acked(sock, ack);
-            /* RTT 采样与 Jacobson 估计（仅记录RTTS作图，不改实际重传定时器） */
+            /* RTT 采样与 Jacobson 估计(RFC6298)：结果写回 sw->rto 驱动数据段超时判定；
+               Karn 算法下重传轮不采样，sw->rto 保留超时退避值直到出现干净样本 */
             if (have_sample)
             {
                 struct timeval anow;
@@ -932,31 +976,62 @@ static void handle_ack(tju_tcp_t *sock, char *pkt)
                         sw->rttvar = (uint32_t)((int32_t)sw->rttvar + verr / 4);                   /* RTTVAR+=.../4 */
                     }
                     uint32_t rto_calc = sw->srtt + 4 * sw->rttvar;
-                    if (rto_calc < 20)
-                        rto_calc = 20;
+                    if (rto_calc < RTO_MIN_MS)
+                        rto_calc = RTO_MIN_MS;
                     if (rto_calc > RTO_MAX_MS)
                         rto_calc = RTO_MAX_MS;
+                    sw->rto = rto_calc; /* 动态RTO真正用于数据段超时判定 */
                     trace_emit("RTTS", "SampleRTT:%.3f EstimatedRTT:%.3f DeviationRTT:%.3f TimeoutInterval:%.3f",
                                (double)sample, (double)sw->srtt, (double)sw->rttvar, (double)rto_calc);
                 }
             }
-            /* 拥塞控制：新ACK推进窗口——慢启动指数增长，越过门限后拥塞避免线性增长 */
+            /* ===== 基础Reno(RFC5681) 拥塞窗口增长：仅对"累计确认新数据的ACK"执行 ===== */
             int ca_type;
-            if (sw->cwnd < sw->ssthresh)
+            if (sw->ca_state == FAST_RECOVERY)
             {
-                sw->cwnd += SMSS; /* 慢启动：每收一个新ACK增1段 */
+                if ((int32_t)(ack - sw->recovery_point) >= 0)
+                {
+                    /* 恢复ACK：已确认进入快恢复时的全部在途数据(ack≥recovery_point)，
+                       cwnd收缩到ssthresh，转入拥塞避免，本轮不再增长 */
+                    sw->cwnd = sw->ssthresh;
+                    sw->ca_state = CONGESTION_AVOIDANCE;
+                    sw->ca_inc = 0;
+                    ca_type = 1;
+                }
+                else
+                {
+                    /* 部分确认(SR一窗多丢)：仍在快恢复中，窗口维持——不增长、也不重复降窗 */
+                    ca_type = 2;
+                }
+            }
+            else if (sw->cwnd < sw->ssthresh)
+            {
+                /* 慢启动：每个新ACK使 cwnd 增加，单次增量不超过 1 个 SMSS */
+                sw->cwnd += SMSS;
+                sw->ca_state = SLOW_START;
                 ca_type = 0;
+                if (sw->cwnd >= sw->ssthresh)
+                {
+                    /* 增长达到门限即转入拥塞避免；钳到 ssthresh，保证不比Reno更激进 */
+                    sw->cwnd = sw->ssthresh;
+                    sw->ca_state = CONGESTION_AVOIDANCE;
+                    sw->ca_inc = 0;
+                }
             }
             else
             {
-                uint32_t inc = (uint32_t)(((uint64_t)SMSS * SMSS) / sw->cwnd); /* 约每RTT增1段 */
-                if (inc == 0)
-                    inc = 1;
-                sw->cwnd += inc;
+                /* 拥塞避免：约每RTT增1个SMSS。用 ca_inc 累加 SMSS^2/cwnd 的整数余数，
+                   攒够一个SMSS才增长，避免"不足1字节也+1"而比RFC5681更激进 */
+                sw->ca_state = CONGESTION_AVOIDANCE;
+                sw->ca_inc += (uint32_t)(((uint64_t)SMSS * SMSS) / sw->cwnd);
+                if (sw->ca_inc >= SMSS)
+                {
+                    sw->cwnd += SMSS;
+                    sw->ca_inc -= SMSS;
+                }
                 ca_type = 1;
             }
-            if (sw->cwnd > CWND_MAX)
-                sw->cwnd = CWND_MAX;
+            /* 标准Reno不设cwnd硬上限：实际在途量由 flush_send 中 min(rwnd,cwnd) 约束 */
             trace_cwnd(ca_type, sw->cwnd);
             trace_swnd_locked(sock);
             dbg_printf("NEWACK ack=%u base=%u nextseq=%u send_len=%d rwnd=%u cwnd=%u\n",
@@ -989,18 +1064,35 @@ static void handle_ack(tju_tcp_t *sock, char *pkt)
                 }
                 dbg_printf("FASTXMIT %d pkts base=%u dupack=%d\n", nfpkt, sw->base, sw->dupack);
                 sw->rexmitted = 1;
-                /* 快速重传(type=2)：温和下调 ssthresh/cwnd（降1/8、高下限托底），
-                   既在曲线上体现拥塞响应，又避免高丢包环境下窗口被压垮 */
-                uint32_t fss = (sw->cwnd * 7) / 8;
-                if (fss < CWND_FLOOR)
-                    fss = CWND_FLOOR;
-                sw->ssthresh = fss;
-                sw->cwnd = fss;
-                trace_cwnd(2, sw->cwnd);
-                trace_swnd_locked(sock);
-                pthread_mutex_unlock(&(sock->send_lock));
+                if (sw->ca_state != FAST_RECOVERY)
+                {
+                    /* 三次重复ACK的标准Reno响应(RFC5681)：一次拥塞事件只降一次窗。
+                       ssthresh=max(FlightSize/2,2*SMSS)，cwnd=ssthresh，进入快速恢复，
+                       记录恢复点 recovery_point=当前SND.NXT；FR期间不再重复降窗。
+                       待 ACK≥recovery_point(恢复ACK)后 cwnd=ssthresh 转入拥塞避免 */
+                    uint32_t fflight = sw->nextseq - sw->base; /* FlightSize */
+                    uint32_t fhalf = fflight / 2;
+                    sw->ssthresh = (fhalf >= 2 * SMSS) ? fhalf : (2 * SMSS);
+                    sw->cwnd = sw->ssthresh;
+                    sw->recovery_point = sw->nextseq;
+                    sw->ca_state = FAST_RECOVERY;
+                    sw->ca_inc = 0;
+                    dbg_printf("  enter-FR ssthresh=%u recover=%u\n", sw->ssthresh, sw->recovery_point);
+                    trace_cwnd(2, sw->cwnd);
+                    trace_swnd_locked(sock);
+                }
+                /* 锁内按序发送快重段，发完再释放锁；flush_send 自行加锁补发新段，
+                   保证快重旧段与新段的全局发送顺序、不与其他线程的发送交错颠倒 */
                 for (int i = 0; i < nfpkt; i++)
+                {
                     send_out(fpkts[i]);
+                    if (i + 1 < nfpkt)
+                    {
+                        struct timespec pace_ts = {0, PACE_NS};
+                        nanosleep(&pace_ts, NULL);
+                    }
+                }
+                pthread_mutex_unlock(&(sock->send_lock));
                 flush_send(sock);
                 return;
             }

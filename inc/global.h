@@ -38,7 +38,7 @@
 
 /* RTT/RTO 相关，单位毫秒（RFC6298；最终取值以《说明书v2》为准）*/
 #define RTO_INIT_MS 1000 // 数据阶段初始 RTO = 1s
-#define RTO_MIN_MS 50	 // RTO 下限（6ms RTT 环境下 50ms 足够，丢包恢复更快）
+#define RTO_MIN_MS 1000 // RTO 下限 = 1s（RFC6298 §2.4：计算值小于1s时向上取整到1s，吸收排队抖动、避免虚假超时）
 #define RTO_MAX_MS 3000	 // RTO 上限；SYN 重传后数据阶段重置为 3s
 #define MAX_RXT 12		 // 单个报文最大重传次数（教学取值）
 
@@ -83,6 +83,8 @@ typedef struct
 	uint8_t rexmitted;		  // Karn算法：自上次采样以来是否发生过重传（重传段的ACK不采样RTT）
 	uint8_t loss_hold;		  // 拥塞控制：本轮超时已降窗的去重标志，NEWACK后清除
 	uint32_t ca_inc;		  // 拥塞避免阶段累计的增长字节（实现约每RTT增1个SMSS）
+	uint8_t ca_state;		  // 拥塞控制状态：SLOW_START/CONGESTION_AVOIDANCE/FAST_RECOVERY
+	uint32_t recovery_point; // 进入快速恢复时的 SND.NXT；ACK≥它才算恢复ACK(兼容一窗多丢的部分确认)
 	struct timeval send_time; // 最早未确认报文的发送时刻
 } sender_window_t;
 
