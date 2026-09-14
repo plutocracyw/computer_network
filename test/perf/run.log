@@ -1,0 +1,867 @@
+===== [loss_p0 rep1] rate=100 delay=300 distro=0 loss=0 =====
+
+即将使用如下网络状态进行数据传输: rate:100Mbps delay:300ms delay-distro:0 loss:0% 
+
+====================================================================
+============================开始测试================================
+====================================================================
+[自动测试] 编译提交源码
+> cd /vagrant/tju_tcp && make
+rm -f ./build/*.o client server
+gcc -pthread -g -ggdb -DDEBUG -I./inc -c -o build/tju_packet.o src/tju_packet.c
+gcc -pthread -g -ggdb -DDEBUG -I./inc -c -o build/kernel.o src/kernel.c
+gcc -pthread -g -ggdb -DDEBUG -I./inc -c -o build/tju_tcp.o src/tju_tcp.c
+gcc -pthread -g -ggdb -DDEBUG -I./inc ./src/server.c -o server ./build/tju_packet.o ./build/kernel.o ./build/tju_tcp.o 
+gcc -pthread -g -ggdb -DDEBUG -I./inc ./src/client.c -o client ./build/tju_packet.o ./build/kernel.o ./build/tju_tcp.o  
+
+[自动测试] 检测到用户提供了自己的测试Makefile, 使用用户的测试Makefile替换自带的版本
+> cp /vagrant/tju_tcp/test_Makefile /vagrant/tju_tcp/test/Makefile
+
+[自动测试] 编译测试源码
+> cd /vagrant/tju_tcp/test && make
+rm -f test_client test_server rdt_server rdt_client close_client client.log server.log rdt_server.log rdt_client.log rdt_recv_file.txt
+make: Warning: File 'Makefile' has modification time 88 s in the future
+gcc -pthread -g -ggdb -DDEBUG -I../inc ./test_client.c -o test_client ../build/tju_packet.o ../build/kernel.o ../build/tju_tcp.o 
+gcc -pthread -g -ggdb -DDEBUG -I../inc ./test_server.c -o test_server ../build/tju_packet.o ../build/kernel.o ../build/tju_tcp.o 
+gcc -pthread -g -ggdb -DDEBUG -I../inc ./test_rdt_server.c -o rdt_server ../build/tju_packet.o ../build/kernel.o ../build/tju_tcp.o 
+gcc -pthread -g -ggdb -DDEBUG -I../inc ./test_rdt_client.c -o rdt_client ../build/tju_packet.o ../build/kernel.o ../build/tju_tcp.o 
+./test_rdt_client.c: In function ‘main’:
+./test_rdt_client.c:37:5: warning: implicit declaration of function ‘fstat’ [-Wimplicit-function-declaration]
+   37 |     fstat(fd, &st);
+      |     ^~~~~
+gcc -pthread -g -ggdb -DDEBUG -I../inc ./test_close_client.c -o close_client ../build/tju_packet.o ../build/kernel.o ../build/tju_tcp.o 
+make: warning:  Clock skew detected.  Your build may be incomplete.
+
+============================ 抓包并绘制SeqNum随Time变化图 ================================
+[抓包并绘图] 清理上一次的抓包结果
+[抓包并绘图] 开始在服务端抓包
+[抓包并绘图] 开启服务端和客户端
+[抓包并绘图] 等待6s建立连接
+[抓包并绘图] 建立连接后  设置双方的网络通讯速率 丢包率 和延迟: sudo tcset enp0s8 --rate 100Mbps --delay 300ms --delay-distro 0 --loss 0% --overwrite
+[抓包并绘图] 等待60s 进行双方通信
+[抓包并绘图] 停止抓包
+[抓包并绘图] 关闭双端
+[抓包并绘图] 取消网络设置
+[抓包并绘图] 根据抓包结果绘制图像
+正在使用 /home/vagrant/server.pcap 抓包结果绘图
+绘制成功, 图像位于/vagrant/tju_tcp/test/SeqNum_VS_Time.png
+----- saved to perf/raw/loss_p0_r1 -----
+===== [loss_p1 rep1] rate=100 delay=300 distro=0 loss=1 =====
+
+即将使用如下网络状态进行数据传输: rate:100Mbps delay:300ms delay-distro:0 loss:1% 
+
+====================================================================
+============================开始测试================================
+====================================================================
+[自动测试] 编译提交源码
+> cd /vagrant/tju_tcp && make
+rm -f ./build/*.o client server
+gcc -pthread -g -ggdb -DDEBUG -I./inc -c -o build/tju_packet.o src/tju_packet.c
+gcc -pthread -g -ggdb -DDEBUG -I./inc -c -o build/kernel.o src/kernel.c
+gcc -pthread -g -ggdb -DDEBUG -I./inc -c -o build/tju_tcp.o src/tju_tcp.c
+gcc -pthread -g -ggdb -DDEBUG -I./inc ./src/server.c -o server ./build/tju_packet.o ./build/kernel.o ./build/tju_tcp.o 
+gcc -pthread -g -ggdb -DDEBUG -I./inc ./src/client.c -o client ./build/tju_packet.o ./build/kernel.o ./build/tju_tcp.o  
+make: Warning: File 'Makefile' has modification time 88 s in the future
+
+[自动测试] 检测到用户提供了自己的测试Makefile, 使用用户的测试Makefile替换自带的版本
+> cp /vagrant/tju_tcp/test_Makefile /vagrant/tju_tcp/test/Makefile
+
+[自动测试] 编译测试源码
+> cd /vagrant/tju_tcp/test && make
+rm -f test_client test_server rdt_server rdt_client close_client client.log server.log rdt_server.log rdt_client.log rdt_recv_file.txt
+gcc -pthread -g -ggdb -DDEBUG -I../inc ./test_client.c -o test_client ../build/tju_packet.o ../build/kernel.o ../build/tju_tcp.o 
+gcc -pthread -g -ggdb -DDEBUG -I../inc ./test_server.c -o test_server ../build/tju_packet.o ../build/kernel.o ../build/tju_tcp.o 
+gcc -pthread -g -ggdb -DDEBUG -I../inc ./test_rdt_server.c -o rdt_server ../build/tju_packet.o ../build/kernel.o ../build/tju_tcp.o 
+gcc -pthread -g -ggdb -DDEBUG -I../inc ./test_rdt_client.c -o rdt_client ../build/tju_packet.o ../build/kernel.o ../build/tju_tcp.o 
+./test_rdt_client.c: In function ‘main’:
+./test_rdt_client.c:37:5: warning: implicit declaration of function ‘fstat’ [-Wimplicit-function-declaration]
+   37 |     fstat(fd, &st);
+      |     ^~~~~
+gcc -pthread -g -ggdb -DDEBUG -I../inc ./test_close_client.c -o close_client ../build/tju_packet.o ../build/kernel.o ../build/tju_tcp.o 
+make: warning:  Clock skew detected.  Your build may be incomplete.
+
+============================ 抓包并绘制SeqNum随Time变化图 ================================
+[抓包并绘图] 清理上一次的抓包结果
+[抓包并绘图] 开始在服务端抓包
+[抓包并绘图] 开启服务端和客户端
+[抓包并绘图] 等待6s建立连接
+[抓包并绘图] 建立连接后  设置双方的网络通讯速率 丢包率 和延迟: sudo tcset enp0s8 --rate 100Mbps --delay 300ms --delay-distro 0 --loss 1% --overwrite
+[抓包并绘图] 等待60s 进行双方通信
+[抓包并绘图] 停止抓包
+[抓包并绘图] 关闭双端
+[抓包并绘图] 取消网络设置
+[抓包并绘图] 根据抓包结果绘制图像
+正在使用 /home/vagrant/server.pcap 抓包结果绘图
+绘制成功, 图像位于/vagrant/tju_tcp/test/SeqNum_VS_Time.png
+----- saved to perf/raw/loss_p1_r1 -----
+===== [loss_p3 rep1] rate=100 delay=300 distro=0 loss=3 =====
+
+即将使用如下网络状态进行数据传输: rate:100Mbps delay:300ms delay-distro:0 loss:3% 
+
+====================================================================
+============================开始测试================================
+====================================================================
+[自动测试] 编译提交源码
+> cd /vagrant/tju_tcp && make
+rm -f ./build/*.o client server
+gcc -pthread -g -ggdb -DDEBUG -I./inc -c -o build/tju_packet.o src/tju_packet.c
+gcc -pthread -g -ggdb -DDEBUG -I./inc -c -o build/kernel.o src/kernel.c
+gcc -pthread -g -ggdb -DDEBUG -I./inc -c -o build/tju_tcp.o src/tju_tcp.c
+gcc -pthread -g -ggdb -DDEBUG -I./inc ./src/server.c -o server ./build/tju_packet.o ./build/kernel.o ./build/tju_tcp.o 
+gcc -pthread -g -ggdb -DDEBUG -I./inc ./src/client.c -o client ./build/tju_packet.o ./build/kernel.o ./build/tju_tcp.o  
+make: Warning: File 'Makefile' has modification time 87 s in the future
+
+[自动测试] 检测到用户提供了自己的测试Makefile, 使用用户的测试Makefile替换自带的版本
+> cp /vagrant/tju_tcp/test_Makefile /vagrant/tju_tcp/test/Makefile
+
+[自动测试] 编译测试源码
+> cd /vagrant/tju_tcp/test && make
+rm -f test_client test_server rdt_server rdt_client close_client client.log server.log rdt_server.log rdt_client.log rdt_recv_file.txt
+gcc -pthread -g -ggdb -DDEBUG -I../inc ./test_client.c -o test_client ../build/tju_packet.o ../build/kernel.o ../build/tju_tcp.o 
+gcc -pthread -g -ggdb -DDEBUG -I../inc ./test_server.c -o test_server ../build/tju_packet.o ../build/kernel.o ../build/tju_tcp.o 
+gcc -pthread -g -ggdb -DDEBUG -I../inc ./test_rdt_server.c -o rdt_server ../build/tju_packet.o ../build/kernel.o ../build/tju_tcp.o 
+gcc -pthread -g -ggdb -DDEBUG -I../inc ./test_rdt_client.c -o rdt_client ../build/tju_packet.o ../build/kernel.o ../build/tju_tcp.o 
+./test_rdt_client.c: In function ‘main’:
+./test_rdt_client.c:37:5: warning: implicit declaration of function ‘fstat’ [-Wimplicit-function-declaration]
+   37 |     fstat(fd, &st);
+      |     ^~~~~
+gcc -pthread -g -ggdb -DDEBUG -I../inc ./test_close_client.c -o close_client ../build/tju_packet.o ../build/kernel.o ../build/tju_tcp.o 
+make: warning:  Clock skew detected.  Your build may be incomplete.
+
+============================ 抓包并绘制SeqNum随Time变化图 ================================
+[抓包并绘图] 清理上一次的抓包结果
+[抓包并绘图] 开始在服务端抓包
+[抓包并绘图] 开启服务端和客户端
+[抓包并绘图] 等待6s建立连接
+[抓包并绘图] 建立连接后  设置双方的网络通讯速率 丢包率 和延迟: sudo tcset enp0s8 --rate 100Mbps --delay 300ms --delay-distro 0 --loss 3% --overwrite
+[抓包并绘图] 等待60s 进行双方通信
+[抓包并绘图] 停止抓包
+[抓包并绘图] 关闭双端
+[抓包并绘图] 取消网络设置
+[抓包并绘图] 根据抓包结果绘制图像
+正在使用 /home/vagrant/server.pcap 抓包结果绘图
+绘制成功, 图像位于/vagrant/tju_tcp/test/SeqNum_VS_Time.png
+----- saved to perf/raw/loss_p3_r1 -----
+===== [loss_p10 rep1] rate=100 delay=300 distro=0 loss=10 =====
+
+即将使用如下网络状态进行数据传输: rate:100Mbps delay:300ms delay-distro:0 loss:10% 
+
+====================================================================
+============================开始测试================================
+====================================================================
+[自动测试] 编译提交源码
+> cd /vagrant/tju_tcp && make
+rm -f ./build/*.o client server
+gcc -pthread -g -ggdb -DDEBUG -I./inc -c -o build/tju_packet.o src/tju_packet.c
+gcc -pthread -g -ggdb -DDEBUG -I./inc -c -o build/kernel.o src/kernel.c
+gcc -pthread -g -ggdb -DDEBUG -I./inc -c -o build/tju_tcp.o src/tju_tcp.c
+gcc -pthread -g -ggdb -DDEBUG -I./inc ./src/server.c -o server ./build/tju_packet.o ./build/kernel.o ./build/tju_tcp.o 
+gcc -pthread -g -ggdb -DDEBUG -I./inc ./src/client.c -o client ./build/tju_packet.o ./build/kernel.o ./build/tju_tcp.o  
+
+[自动测试] 检测到用户提供了自己的测试Makefile, 使用用户的测试Makefile替换自带的版本
+> cp /vagrant/tju_tcp/test_Makefile /vagrant/tju_tcp/test/Makefile
+
+[自动测试] 编译测试源码
+> cd /vagrant/tju_tcp/test && make
+rm -f test_client test_server rdt_server rdt_client close_client client.log server.log rdt_server.log rdt_client.log rdt_recv_file.txt
+make: Warning: File 'Makefile' has modification time 87 s in the future
+gcc -pthread -g -ggdb -DDEBUG -I../inc ./test_client.c -o test_client ../build/tju_packet.o ../build/kernel.o ../build/tju_tcp.o 
+gcc -pthread -g -ggdb -DDEBUG -I../inc ./test_server.c -o test_server ../build/tju_packet.o ../build/kernel.o ../build/tju_tcp.o 
+gcc -pthread -g -ggdb -DDEBUG -I../inc ./test_rdt_server.c -o rdt_server ../build/tju_packet.o ../build/kernel.o ../build/tju_tcp.o 
+gcc -pthread -g -ggdb -DDEBUG -I../inc ./test_rdt_client.c -o rdt_client ../build/tju_packet.o ../build/kernel.o ../build/tju_tcp.o 
+./test_rdt_client.c: In function ‘main’:
+./test_rdt_client.c:37:5: warning: implicit declaration of function ‘fstat’ [-Wimplicit-function-declaration]
+   37 |     fstat(fd, &st);
+      |     ^~~~~
+gcc -pthread -g -ggdb -DDEBUG -I../inc ./test_close_client.c -o close_client ../build/tju_packet.o ../build/kernel.o ../build/tju_tcp.o 
+make: warning:  Clock skew detected.  Your build may be incomplete.
+
+============================ 抓包并绘制SeqNum随Time变化图 ================================
+[抓包并绘图] 清理上一次的抓包结果
+[抓包并绘图] 开始在服务端抓包
+[抓包并绘图] 开启服务端和客户端
+[抓包并绘图] 等待6s建立连接
+[抓包并绘图] 建立连接后  设置双方的网络通讯速率 丢包率 和延迟: sudo tcset enp0s8 --rate 100Mbps --delay 300ms --delay-distro 0 --loss 10% --overwrite
+[抓包并绘图] 等待60s 进行双方通信
+[抓包并绘图] 停止抓包
+[抓包并绘图] 关闭双端
+[抓包并绘图] 取消网络设置
+[抓包并绘图] 根据抓包结果绘制图像
+正在使用 /home/vagrant/server.pcap 抓包结果绘图
+绘制成功, 图像位于/vagrant/tju_tcp/test/SeqNum_VS_Time.png
+----- saved to perf/raw/loss_p10_r1 -----
+===== [delay_d50 rep1] rate=100 delay=50 distro=0 loss=0 =====
+
+即将使用如下网络状态进行数据传输: rate:100Mbps delay:50ms delay-distro:0 loss:0% 
+
+====================================================================
+============================开始测试================================
+====================================================================
+[自动测试] 编译提交源码
+> cd /vagrant/tju_tcp && make
+rm -f ./build/*.o client server
+gcc -pthread -g -ggdb -DDEBUG -I./inc -c -o build/tju_packet.o src/tju_packet.c
+gcc -pthread -g -ggdb -DDEBUG -I./inc -c -o build/kernel.o src/kernel.c
+gcc -pthread -g -ggdb -DDEBUG -I./inc -c -o build/tju_tcp.o src/tju_tcp.c
+gcc -pthread -g -ggdb -DDEBUG -I./inc ./src/server.c -o server ./build/tju_packet.o ./build/kernel.o ./build/tju_tcp.o 
+gcc -pthread -g -ggdb -DDEBUG -I./inc ./src/client.c -o client ./build/tju_packet.o ./build/kernel.o ./build/tju_tcp.o  
+make: Warning: File 'Makefile' has modification time 87 s in the future
+
+[自动测试] 检测到用户提供了自己的测试Makefile, 使用用户的测试Makefile替换自带的版本
+> cp /vagrant/tju_tcp/test_Makefile /vagrant/tju_tcp/test/Makefile
+
+[自动测试] 编译测试源码
+> cd /vagrant/tju_tcp/test && make
+rm -f test_client test_server rdt_server rdt_client close_client client.log server.log rdt_server.log rdt_client.log rdt_recv_file.txt
+gcc -pthread -g -ggdb -DDEBUG -I../inc ./test_client.c -o test_client ../build/tju_packet.o ../build/kernel.o ../build/tju_tcp.o 
+gcc -pthread -g -ggdb -DDEBUG -I../inc ./test_server.c -o test_server ../build/tju_packet.o ../build/kernel.o ../build/tju_tcp.o 
+gcc -pthread -g -ggdb -DDEBUG -I../inc ./test_rdt_server.c -o rdt_server ../build/tju_packet.o ../build/kernel.o ../build/tju_tcp.o 
+gcc -pthread -g -ggdb -DDEBUG -I../inc ./test_rdt_client.c -o rdt_client ../build/tju_packet.o ../build/kernel.o ../build/tju_tcp.o 
+./test_rdt_client.c: In function ‘main’:
+./test_rdt_client.c:37:5: warning: implicit declaration of function ‘fstat’ [-Wimplicit-function-declaration]
+   37 |     fstat(fd, &st);
+      |     ^~~~~
+gcc -pthread -g -ggdb -DDEBUG -I../inc ./test_close_client.c -o close_client ../build/tju_packet.o ../build/kernel.o ../build/tju_tcp.o 
+make: warning:  Clock skew detected.  Your build may be incomplete.
+
+============================ 抓包并绘制SeqNum随Time变化图 ================================
+[抓包并绘图] 清理上一次的抓包结果
+[抓包并绘图] 开始在服务端抓包
+[抓包并绘图] 开启服务端和客户端
+[抓包并绘图] 等待6s建立连接
+[抓包并绘图] 建立连接后  设置双方的网络通讯速率 丢包率 和延迟: sudo tcset enp0s8 --rate 100Mbps --delay 50ms --delay-distro 0 --loss 0% --overwrite
+[抓包并绘图] 等待60s 进行双方通信
+[抓包并绘图] 停止抓包
+[抓包并绘图] 关闭双端
+[抓包并绘图] 取消网络设置
+[抓包并绘图] 根据抓包结果绘制图像
+正在使用 /home/vagrant/server.pcap 抓包结果绘图
+绘制成功, 图像位于/vagrant/tju_tcp/test/SeqNum_VS_Time.png
+----- saved to perf/raw/delay_d50_r1 -----
+===== [delay_d150 rep1] rate=100 delay=150 distro=0 loss=0 =====
+
+即将使用如下网络状态进行数据传输: rate:100Mbps delay:150ms delay-distro:0 loss:0% 
+
+====================================================================
+============================开始测试================================
+====================================================================
+[自动测试] 编译提交源码
+> cd /vagrant/tju_tcp && make
+rm -f ./build/*.o client server
+gcc -pthread -g -ggdb -DDEBUG -I./inc -c -o build/tju_packet.o src/tju_packet.c
+gcc -pthread -g -ggdb -DDEBUG -I./inc -c -o build/kernel.o src/kernel.c
+gcc -pthread -g -ggdb -DDEBUG -I./inc -c -o build/tju_tcp.o src/tju_tcp.c
+gcc -pthread -g -ggdb -DDEBUG -I./inc ./src/server.c -o server ./build/tju_packet.o ./build/kernel.o ./build/tju_tcp.o 
+gcc -pthread -g -ggdb -DDEBUG -I./inc ./src/client.c -o client ./build/tju_packet.o ./build/kernel.o ./build/tju_tcp.o  
+
+[自动测试] 检测到用户提供了自己的测试Makefile, 使用用户的测试Makefile替换自带的版本
+> cp /vagrant/tju_tcp/test_Makefile /vagrant/tju_tcp/test/Makefile
+
+[自动测试] 编译测试源码
+> cd /vagrant/tju_tcp/test && make
+rm -f test_client test_server rdt_server rdt_client close_client client.log server.log rdt_server.log rdt_client.log rdt_recv_file.txt
+make: Warning: File 'Makefile' has modification time 87 s in the future
+gcc -pthread -g -ggdb -DDEBUG -I../inc ./test_client.c -o test_client ../build/tju_packet.o ../build/kernel.o ../build/tju_tcp.o 
+gcc -pthread -g -ggdb -DDEBUG -I../inc ./test_server.c -o test_server ../build/tju_packet.o ../build/kernel.o ../build/tju_tcp.o 
+gcc -pthread -g -ggdb -DDEBUG -I../inc ./test_rdt_server.c -o rdt_server ../build/tju_packet.o ../build/kernel.o ../build/tju_tcp.o 
+gcc -pthread -g -ggdb -DDEBUG -I../inc ./test_rdt_client.c -o rdt_client ../build/tju_packet.o ../build/kernel.o ../build/tju_tcp.o 
+./test_rdt_client.c: In function ‘main’:
+./test_rdt_client.c:37:5: warning: implicit declaration of function ‘fstat’ [-Wimplicit-function-declaration]
+   37 |     fstat(fd, &st);
+      |     ^~~~~
+gcc -pthread -g -ggdb -DDEBUG -I../inc ./test_close_client.c -o close_client ../build/tju_packet.o ../build/kernel.o ../build/tju_tcp.o 
+make: warning:  Clock skew detected.  Your build may be incomplete.
+
+============================ 抓包并绘制SeqNum随Time变化图 ================================
+[抓包并绘图] 清理上一次的抓包结果
+[抓包并绘图] 开始在服务端抓包
+[抓包并绘图] 开启服务端和客户端
+[抓包并绘图] 等待6s建立连接
+[抓包并绘图] 建立连接后  设置双方的网络通讯速率 丢包率 和延迟: sudo tcset enp0s8 --rate 100Mbps --delay 150ms --delay-distro 0 --loss 0% --overwrite
+[抓包并绘图] 等待60s 进行双方通信
+[抓包并绘图] 停止抓包
+[抓包并绘图] 关闭双端
+[抓包并绘图] 取消网络设置
+[抓包并绘图] 根据抓包结果绘制图像
+正在使用 /home/vagrant/server.pcap 抓包结果绘图
+绘制成功, 图像位于/vagrant/tju_tcp/test/SeqNum_VS_Time.png
+----- saved to perf/raw/delay_d150_r1 -----
+===== [loss_p0 rep2] rate=100 delay=300 distro=0 loss=0 =====
+
+即将使用如下网络状态进行数据传输: rate:100Mbps delay:300ms delay-distro:0 loss:0% 
+
+====================================================================
+============================开始测试================================
+====================================================================
+[自动测试] 编译提交源码
+> cd /vagrant/tju_tcp && make
+rm -f ./build/*.o client server
+gcc -pthread -g -ggdb -DDEBUG -I./inc -c -o build/tju_packet.o src/tju_packet.c
+gcc -pthread -g -ggdb -DDEBUG -I./inc -c -o build/kernel.o src/kernel.c
+gcc -pthread -g -ggdb -DDEBUG -I./inc -c -o build/tju_tcp.o src/tju_tcp.c
+gcc -pthread -g -ggdb -DDEBUG -I./inc ./src/server.c -o server ./build/tju_packet.o ./build/kernel.o ./build/tju_tcp.o 
+gcc -pthread -g -ggdb -DDEBUG -I./inc ./src/client.c -o client ./build/tju_packet.o ./build/kernel.o ./build/tju_tcp.o  
+make: Warning: File 'Makefile' has modification time 87 s in the future
+
+[自动测试] 检测到用户提供了自己的测试Makefile, 使用用户的测试Makefile替换自带的版本
+> cp /vagrant/tju_tcp/test_Makefile /vagrant/tju_tcp/test/Makefile
+
+[自动测试] 编译测试源码
+> cd /vagrant/tju_tcp/test && make
+rm -f test_client test_server rdt_server rdt_client close_client client.log server.log rdt_server.log rdt_client.log rdt_recv_file.txt
+gcc -pthread -g -ggdb -DDEBUG -I../inc ./test_client.c -o test_client ../build/tju_packet.o ../build/kernel.o ../build/tju_tcp.o 
+gcc -pthread -g -ggdb -DDEBUG -I../inc ./test_server.c -o test_server ../build/tju_packet.o ../build/kernel.o ../build/tju_tcp.o 
+gcc -pthread -g -ggdb -DDEBUG -I../inc ./test_rdt_server.c -o rdt_server ../build/tju_packet.o ../build/kernel.o ../build/tju_tcp.o 
+gcc -pthread -g -ggdb -DDEBUG -I../inc ./test_rdt_client.c -o rdt_client ../build/tju_packet.o ../build/kernel.o ../build/tju_tcp.o 
+./test_rdt_client.c: In function ‘main’:
+./test_rdt_client.c:37:5: warning: implicit declaration of function ‘fstat’ [-Wimplicit-function-declaration]
+   37 |     fstat(fd, &st);
+      |     ^~~~~
+gcc -pthread -g -ggdb -DDEBUG -I../inc ./test_close_client.c -o close_client ../build/tju_packet.o ../build/kernel.o ../build/tju_tcp.o 
+make: warning:  Clock skew detected.  Your build may be incomplete.
+
+============================ 抓包并绘制SeqNum随Time变化图 ================================
+[抓包并绘图] 清理上一次的抓包结果
+[抓包并绘图] 开始在服务端抓包
+[抓包并绘图] 开启服务端和客户端
+[抓包并绘图] 等待6s建立连接
+[抓包并绘图] 建立连接后  设置双方的网络通讯速率 丢包率 和延迟: sudo tcset enp0s8 --rate 100Mbps --delay 300ms --delay-distro 0 --loss 0% --overwrite
+[抓包并绘图] 等待60s 进行双方通信
+[抓包并绘图] 停止抓包
+[抓包并绘图] 关闭双端
+[抓包并绘图] 取消网络设置
+[抓包并绘图] 根据抓包结果绘制图像
+正在使用 /home/vagrant/server.pcap 抓包结果绘图
+绘制成功, 图像位于/vagrant/tju_tcp/test/SeqNum_VS_Time.png
+----- saved to perf/raw/loss_p0_r2 -----
+===== [loss_p1 rep2] rate=100 delay=300 distro=0 loss=1 =====
+
+即将使用如下网络状态进行数据传输: rate:100Mbps delay:300ms delay-distro:0 loss:1% 
+
+====================================================================
+============================开始测试================================
+====================================================================
+[自动测试] 编译提交源码
+> cd /vagrant/tju_tcp && make
+rm -f ./build/*.o client server
+gcc -pthread -g -ggdb -DDEBUG -I./inc -c -o build/tju_packet.o src/tju_packet.c
+gcc -pthread -g -ggdb -DDEBUG -I./inc -c -o build/kernel.o src/kernel.c
+gcc -pthread -g -ggdb -DDEBUG -I./inc -c -o build/tju_tcp.o src/tju_tcp.c
+gcc -pthread -g -ggdb -DDEBUG -I./inc ./src/server.c -o server ./build/tju_packet.o ./build/kernel.o ./build/tju_tcp.o 
+gcc -pthread -g -ggdb -DDEBUG -I./inc ./src/client.c -o client ./build/tju_packet.o ./build/kernel.o ./build/tju_tcp.o  
+make: Warning: File 'Makefile' has modification time 87 s in the future
+
+[自动测试] 检测到用户提供了自己的测试Makefile, 使用用户的测试Makefile替换自带的版本
+> cp /vagrant/tju_tcp/test_Makefile /vagrant/tju_tcp/test/Makefile
+
+[自动测试] 编译测试源码
+> cd /vagrant/tju_tcp/test && make
+rm -f test_client test_server rdt_server rdt_client close_client client.log server.log rdt_server.log rdt_client.log rdt_recv_file.txt
+gcc -pthread -g -ggdb -DDEBUG -I../inc ./test_client.c -o test_client ../build/tju_packet.o ../build/kernel.o ../build/tju_tcp.o 
+gcc -pthread -g -ggdb -DDEBUG -I../inc ./test_server.c -o test_server ../build/tju_packet.o ../build/kernel.o ../build/tju_tcp.o 
+gcc -pthread -g -ggdb -DDEBUG -I../inc ./test_rdt_server.c -o rdt_server ../build/tju_packet.o ../build/kernel.o ../build/tju_tcp.o 
+gcc -pthread -g -ggdb -DDEBUG -I../inc ./test_rdt_client.c -o rdt_client ../build/tju_packet.o ../build/kernel.o ../build/tju_tcp.o 
+./test_rdt_client.c: In function ‘main’:
+./test_rdt_client.c:37:5: warning: implicit declaration of function ‘fstat’ [-Wimplicit-function-declaration]
+   37 |     fstat(fd, &st);
+      |     ^~~~~
+gcc -pthread -g -ggdb -DDEBUG -I../inc ./test_close_client.c -o close_client ../build/tju_packet.o ../build/kernel.o ../build/tju_tcp.o 
+make: warning:  Clock skew detected.  Your build may be incomplete.
+
+============================ 抓包并绘制SeqNum随Time变化图 ================================
+[抓包并绘图] 清理上一次的抓包结果
+[抓包并绘图] 开始在服务端抓包
+[抓包并绘图] 开启服务端和客户端
+[抓包并绘图] 等待6s建立连接
+[抓包并绘图] 建立连接后  设置双方的网络通讯速率 丢包率 和延迟: sudo tcset enp0s8 --rate 100Mbps --delay 300ms --delay-distro 0 --loss 1% --overwrite
+[抓包并绘图] 等待60s 进行双方通信
+[抓包并绘图] 停止抓包
+[抓包并绘图] 关闭双端
+[抓包并绘图] 取消网络设置
+[抓包并绘图] 根据抓包结果绘制图像
+正在使用 /home/vagrant/server.pcap 抓包结果绘图
+绘制成功, 图像位于/vagrant/tju_tcp/test/SeqNum_VS_Time.png
+----- saved to perf/raw/loss_p1_r2 -----
+===== [loss_p3 rep2] rate=100 delay=300 distro=0 loss=3 =====
+
+即将使用如下网络状态进行数据传输: rate:100Mbps delay:300ms delay-distro:0 loss:3% 
+
+====================================================================
+============================开始测试================================
+====================================================================
+[自动测试] 编译提交源码
+> cd /vagrant/tju_tcp && make
+rm -f ./build/*.o client server
+gcc -pthread -g -ggdb -DDEBUG -I./inc -c -o build/tju_packet.o src/tju_packet.c
+gcc -pthread -g -ggdb -DDEBUG -I./inc -c -o build/kernel.o src/kernel.c
+gcc -pthread -g -ggdb -DDEBUG -I./inc -c -o build/tju_tcp.o src/tju_tcp.c
+gcc -pthread -g -ggdb -DDEBUG -I./inc ./src/server.c -o server ./build/tju_packet.o ./build/kernel.o ./build/tju_tcp.o 
+gcc -pthread -g -ggdb -DDEBUG -I./inc ./src/client.c -o client ./build/tju_packet.o ./build/kernel.o ./build/tju_tcp.o  
+make: Warning: File 'Makefile' has modification time 87 s in the future
+
+[自动测试] 检测到用户提供了自己的测试Makefile, 使用用户的测试Makefile替换自带的版本
+> cp /vagrant/tju_tcp/test_Makefile /vagrant/tju_tcp/test/Makefile
+
+[自动测试] 编译测试源码
+> cd /vagrant/tju_tcp/test && make
+rm -f test_client test_server rdt_server rdt_client close_client client.log server.log rdt_server.log rdt_client.log rdt_recv_file.txt
+gcc -pthread -g -ggdb -DDEBUG -I../inc ./test_client.c -o test_client ../build/tju_packet.o ../build/kernel.o ../build/tju_tcp.o 
+gcc -pthread -g -ggdb -DDEBUG -I../inc ./test_server.c -o test_server ../build/tju_packet.o ../build/kernel.o ../build/tju_tcp.o 
+gcc -pthread -g -ggdb -DDEBUG -I../inc ./test_rdt_server.c -o rdt_server ../build/tju_packet.o ../build/kernel.o ../build/tju_tcp.o 
+gcc -pthread -g -ggdb -DDEBUG -I../inc ./test_rdt_client.c -o rdt_client ../build/tju_packet.o ../build/kernel.o ../build/tju_tcp.o 
+./test_rdt_client.c: In function ‘main’:
+./test_rdt_client.c:37:5: warning: implicit declaration of function ‘fstat’ [-Wimplicit-function-declaration]
+   37 |     fstat(fd, &st);
+      |     ^~~~~
+gcc -pthread -g -ggdb -DDEBUG -I../inc ./test_close_client.c -o close_client ../build/tju_packet.o ../build/kernel.o ../build/tju_tcp.o 
+make: warning:  Clock skew detected.  Your build may be incomplete.
+
+============================ 抓包并绘制SeqNum随Time变化图 ================================
+[抓包并绘图] 清理上一次的抓包结果
+[抓包并绘图] 开始在服务端抓包
+[抓包并绘图] 开启服务端和客户端
+[抓包并绘图] 等待6s建立连接
+[抓包并绘图] 建立连接后  设置双方的网络通讯速率 丢包率 和延迟: sudo tcset enp0s8 --rate 100Mbps --delay 300ms --delay-distro 0 --loss 3% --overwrite
+[抓包并绘图] 等待60s 进行双方通信
+[抓包并绘图] 停止抓包
+[抓包并绘图] 关闭双端
+[抓包并绘图] 取消网络设置
+[抓包并绘图] 根据抓包结果绘制图像
+正在使用 /home/vagrant/server.pcap 抓包结果绘图
+绘制成功, 图像位于/vagrant/tju_tcp/test/SeqNum_VS_Time.png
+----- saved to perf/raw/loss_p3_r2 -----
+===== [loss_p10 rep2] rate=100 delay=300 distro=0 loss=10 =====
+
+即将使用如下网络状态进行数据传输: rate:100Mbps delay:300ms delay-distro:0 loss:10% 
+
+====================================================================
+============================开始测试================================
+====================================================================
+[自动测试] 编译提交源码
+> cd /vagrant/tju_tcp && make
+rm -f ./build/*.o client server
+gcc -pthread -g -ggdb -DDEBUG -I./inc -c -o build/tju_packet.o src/tju_packet.c
+gcc -pthread -g -ggdb -DDEBUG -I./inc -c -o build/kernel.o src/kernel.c
+gcc -pthread -g -ggdb -DDEBUG -I./inc -c -o build/tju_tcp.o src/tju_tcp.c
+gcc -pthread -g -ggdb -DDEBUG -I./inc ./src/server.c -o server ./build/tju_packet.o ./build/kernel.o ./build/tju_tcp.o 
+gcc -pthread -g -ggdb -DDEBUG -I./inc ./src/client.c -o client ./build/tju_packet.o ./build/kernel.o ./build/tju_tcp.o  
+make: Warning: File 'Makefile' has modification time 87 s in the future
+
+[自动测试] 检测到用户提供了自己的测试Makefile, 使用用户的测试Makefile替换自带的版本
+> cp /vagrant/tju_tcp/test_Makefile /vagrant/tju_tcp/test/Makefile
+
+[自动测试] 编译测试源码
+> cd /vagrant/tju_tcp/test && make
+rm -f test_client test_server rdt_server rdt_client close_client client.log server.log rdt_server.log rdt_client.log rdt_recv_file.txt
+gcc -pthread -g -ggdb -DDEBUG -I../inc ./test_client.c -o test_client ../build/tju_packet.o ../build/kernel.o ../build/tju_tcp.o 
+gcc -pthread -g -ggdb -DDEBUG -I../inc ./test_server.c -o test_server ../build/tju_packet.o ../build/kernel.o ../build/tju_tcp.o 
+gcc -pthread -g -ggdb -DDEBUG -I../inc ./test_rdt_server.c -o rdt_server ../build/tju_packet.o ../build/kernel.o ../build/tju_tcp.o 
+gcc -pthread -g -ggdb -DDEBUG -I../inc ./test_rdt_client.c -o rdt_client ../build/tju_packet.o ../build/kernel.o ../build/tju_tcp.o 
+./test_rdt_client.c: In function ‘main’:
+./test_rdt_client.c:37:5: warning: implicit declaration of function ‘fstat’ [-Wimplicit-function-declaration]
+   37 |     fstat(fd, &st);
+      |     ^~~~~
+gcc -pthread -g -ggdb -DDEBUG -I../inc ./test_close_client.c -o close_client ../build/tju_packet.o ../build/kernel.o ../build/tju_tcp.o 
+make: warning:  Clock skew detected.  Your build may be incomplete.
+
+============================ 抓包并绘制SeqNum随Time变化图 ================================
+[抓包并绘图] 清理上一次的抓包结果
+[抓包并绘图] 开始在服务端抓包
+[抓包并绘图] 开启服务端和客户端
+[抓包并绘图] 等待6s建立连接
+[抓包并绘图] 建立连接后  设置双方的网络通讯速率 丢包率 和延迟: sudo tcset enp0s8 --rate 100Mbps --delay 300ms --delay-distro 0 --loss 10% --overwrite
+[抓包并绘图] 等待60s 进行双方通信
+[抓包并绘图] 停止抓包
+[抓包并绘图] 关闭双端
+[抓包并绘图] 取消网络设置
+[抓包并绘图] 根据抓包结果绘制图像
+正在使用 /home/vagrant/server.pcap 抓包结果绘图
+绘制成功, 图像位于/vagrant/tju_tcp/test/SeqNum_VS_Time.png
+----- saved to perf/raw/loss_p10_r2 -----
+===== [delay_d50 rep2] rate=100 delay=50 distro=0 loss=0 =====
+
+即将使用如下网络状态进行数据传输: rate:100Mbps delay:50ms delay-distro:0 loss:0% 
+
+====================================================================
+============================开始测试================================
+====================================================================
+[自动测试] 编译提交源码
+> cd /vagrant/tju_tcp && make
+rm -f ./build/*.o client server
+gcc -pthread -g -ggdb -DDEBUG -I./inc -c -o build/tju_packet.o src/tju_packet.c
+gcc -pthread -g -ggdb -DDEBUG -I./inc -c -o build/kernel.o src/kernel.c
+gcc -pthread -g -ggdb -DDEBUG -I./inc -c -o build/tju_tcp.o src/tju_tcp.c
+gcc -pthread -g -ggdb -DDEBUG -I./inc ./src/server.c -o server ./build/tju_packet.o ./build/kernel.o ./build/tju_tcp.o 
+gcc -pthread -g -ggdb -DDEBUG -I./inc ./src/client.c -o client ./build/tju_packet.o ./build/kernel.o ./build/tju_tcp.o  
+make: Warning: File 'Makefile' has modification time 87 s in the future
+
+[自动测试] 检测到用户提供了自己的测试Makefile, 使用用户的测试Makefile替换自带的版本
+> cp /vagrant/tju_tcp/test_Makefile /vagrant/tju_tcp/test/Makefile
+
+[自动测试] 编译测试源码
+> cd /vagrant/tju_tcp/test && make
+rm -f test_client test_server rdt_server rdt_client close_client client.log server.log rdt_server.log rdt_client.log rdt_recv_file.txt
+gcc -pthread -g -ggdb -DDEBUG -I../inc ./test_client.c -o test_client ../build/tju_packet.o ../build/kernel.o ../build/tju_tcp.o 
+gcc -pthread -g -ggdb -DDEBUG -I../inc ./test_server.c -o test_server ../build/tju_packet.o ../build/kernel.o ../build/tju_tcp.o 
+gcc -pthread -g -ggdb -DDEBUG -I../inc ./test_rdt_server.c -o rdt_server ../build/tju_packet.o ../build/kernel.o ../build/tju_tcp.o 
+gcc -pthread -g -ggdb -DDEBUG -I../inc ./test_rdt_client.c -o rdt_client ../build/tju_packet.o ../build/kernel.o ../build/tju_tcp.o 
+./test_rdt_client.c: In function ‘main’:
+./test_rdt_client.c:37:5: warning: implicit declaration of function ‘fstat’ [-Wimplicit-function-declaration]
+   37 |     fstat(fd, &st);
+      |     ^~~~~
+gcc -pthread -g -ggdb -DDEBUG -I../inc ./test_close_client.c -o close_client ../build/tju_packet.o ../build/kernel.o ../build/tju_tcp.o 
+make: warning:  Clock skew detected.  Your build may be incomplete.
+
+============================ 抓包并绘制SeqNum随Time变化图 ================================
+[抓包并绘图] 清理上一次的抓包结果
+[抓包并绘图] 开始在服务端抓包
+[抓包并绘图] 开启服务端和客户端
+[抓包并绘图] 等待6s建立连接
+[抓包并绘图] 建立连接后  设置双方的网络通讯速率 丢包率 和延迟: sudo tcset enp0s8 --rate 100Mbps --delay 50ms --delay-distro 0 --loss 0% --overwrite
+[抓包并绘图] 等待60s 进行双方通信
+[抓包并绘图] 停止抓包
+[抓包并绘图] 关闭双端
+[抓包并绘图] 取消网络设置
+[抓包并绘图] 根据抓包结果绘制图像
+正在使用 /home/vagrant/server.pcap 抓包结果绘图
+绘制成功, 图像位于/vagrant/tju_tcp/test/SeqNum_VS_Time.png
+----- saved to perf/raw/delay_d50_r2 -----
+===== [delay_d150 rep2] rate=100 delay=150 distro=0 loss=0 =====
+
+即将使用如下网络状态进行数据传输: rate:100Mbps delay:150ms delay-distro:0 loss:0% 
+
+====================================================================
+============================开始测试================================
+====================================================================
+[自动测试] 编译提交源码
+> cd /vagrant/tju_tcp && make
+rm -f ./build/*.o client server
+gcc -pthread -g -ggdb -DDEBUG -I./inc -c -o build/tju_packet.o src/tju_packet.c
+gcc -pthread -g -ggdb -DDEBUG -I./inc -c -o build/kernel.o src/kernel.c
+gcc -pthread -g -ggdb -DDEBUG -I./inc -c -o build/tju_tcp.o src/tju_tcp.c
+gcc -pthread -g -ggdb -DDEBUG -I./inc ./src/server.c -o server ./build/tju_packet.o ./build/kernel.o ./build/tju_tcp.o 
+gcc -pthread -g -ggdb -DDEBUG -I./inc ./src/client.c -o client ./build/tju_packet.o ./build/kernel.o ./build/tju_tcp.o  
+make: Warning: File 'Makefile' has modification time 87 s in the future
+
+[自动测试] 检测到用户提供了自己的测试Makefile, 使用用户的测试Makefile替换自带的版本
+> cp /vagrant/tju_tcp/test_Makefile /vagrant/tju_tcp/test/Makefile
+
+[自动测试] 编译测试源码
+> cd /vagrant/tju_tcp/test && make
+rm -f test_client test_server rdt_server rdt_client close_client client.log server.log rdt_server.log rdt_client.log rdt_recv_file.txt
+gcc -pthread -g -ggdb -DDEBUG -I../inc ./test_client.c -o test_client ../build/tju_packet.o ../build/kernel.o ../build/tju_tcp.o 
+gcc -pthread -g -ggdb -DDEBUG -I../inc ./test_server.c -o test_server ../build/tju_packet.o ../build/kernel.o ../build/tju_tcp.o 
+gcc -pthread -g -ggdb -DDEBUG -I../inc ./test_rdt_server.c -o rdt_server ../build/tju_packet.o ../build/kernel.o ../build/tju_tcp.o 
+gcc -pthread -g -ggdb -DDEBUG -I../inc ./test_rdt_client.c -o rdt_client ../build/tju_packet.o ../build/kernel.o ../build/tju_tcp.o 
+./test_rdt_client.c: In function ‘main’:
+./test_rdt_client.c:37:5: warning: implicit declaration of function ‘fstat’ [-Wimplicit-function-declaration]
+   37 |     fstat(fd, &st);
+      |     ^~~~~
+gcc -pthread -g -ggdb -DDEBUG -I../inc ./test_close_client.c -o close_client ../build/tju_packet.o ../build/kernel.o ../build/tju_tcp.o 
+make: warning:  Clock skew detected.  Your build may be incomplete.
+
+============================ 抓包并绘制SeqNum随Time变化图 ================================
+[抓包并绘图] 清理上一次的抓包结果
+[抓包并绘图] 开始在服务端抓包
+[抓包并绘图] 开启服务端和客户端
+[抓包并绘图] 等待6s建立连接
+[抓包并绘图] 建立连接后  设置双方的网络通讯速率 丢包率 和延迟: sudo tcset enp0s8 --rate 100Mbps --delay 150ms --delay-distro 0 --loss 0% --overwrite
+[抓包并绘图] 等待60s 进行双方通信
+[抓包并绘图] 停止抓包
+[抓包并绘图] 关闭双端
+[抓包并绘图] 取消网络设置
+[抓包并绘图] 根据抓包结果绘制图像
+正在使用 /home/vagrant/server.pcap 抓包结果绘图
+绘制成功, 图像位于/vagrant/tju_tcp/test/SeqNum_VS_Time.png
+----- saved to perf/raw/delay_d150_r2 -----
+===== [loss_p0 rep3] rate=100 delay=300 distro=0 loss=0 =====
+
+即将使用如下网络状态进行数据传输: rate:100Mbps delay:300ms delay-distro:0 loss:0% 
+
+====================================================================
+============================开始测试================================
+====================================================================
+[自动测试] 编译提交源码
+> cd /vagrant/tju_tcp && make
+rm -f ./build/*.o client server
+gcc -pthread -g -ggdb -DDEBUG -I./inc -c -o build/tju_packet.o src/tju_packet.c
+gcc -pthread -g -ggdb -DDEBUG -I./inc -c -o build/kernel.o src/kernel.c
+gcc -pthread -g -ggdb -DDEBUG -I./inc -c -o build/tju_tcp.o src/tju_tcp.c
+gcc -pthread -g -ggdb -DDEBUG -I./inc ./src/server.c -o server ./build/tju_packet.o ./build/kernel.o ./build/tju_tcp.o 
+gcc -pthread -g -ggdb -DDEBUG -I./inc ./src/client.c -o client ./build/tju_packet.o ./build/kernel.o ./build/tju_tcp.o  
+make: Warning: File 'Makefile' has modification time 87 s in the future
+
+[自动测试] 检测到用户提供了自己的测试Makefile, 使用用户的测试Makefile替换自带的版本
+> cp /vagrant/tju_tcp/test_Makefile /vagrant/tju_tcp/test/Makefile
+
+[自动测试] 编译测试源码
+> cd /vagrant/tju_tcp/test && make
+rm -f test_client test_server rdt_server rdt_client close_client client.log server.log rdt_server.log rdt_client.log rdt_recv_file.txt
+gcc -pthread -g -ggdb -DDEBUG -I../inc ./test_client.c -o test_client ../build/tju_packet.o ../build/kernel.o ../build/tju_tcp.o 
+gcc -pthread -g -ggdb -DDEBUG -I../inc ./test_server.c -o test_server ../build/tju_packet.o ../build/kernel.o ../build/tju_tcp.o 
+gcc -pthread -g -ggdb -DDEBUG -I../inc ./test_rdt_server.c -o rdt_server ../build/tju_packet.o ../build/kernel.o ../build/tju_tcp.o 
+gcc -pthread -g -ggdb -DDEBUG -I../inc ./test_rdt_client.c -o rdt_client ../build/tju_packet.o ../build/kernel.o ../build/tju_tcp.o 
+./test_rdt_client.c: In function ‘main’:
+./test_rdt_client.c:37:5: warning: implicit declaration of function ‘fstat’ [-Wimplicit-function-declaration]
+   37 |     fstat(fd, &st);
+      |     ^~~~~
+gcc -pthread -g -ggdb -DDEBUG -I../inc ./test_close_client.c -o close_client ../build/tju_packet.o ../build/kernel.o ../build/tju_tcp.o 
+make: warning:  Clock skew detected.  Your build may be incomplete.
+
+============================ 抓包并绘制SeqNum随Time变化图 ================================
+[抓包并绘图] 清理上一次的抓包结果
+[抓包并绘图] 开始在服务端抓包
+[抓包并绘图] 开启服务端和客户端
+[抓包并绘图] 等待6s建立连接
+[抓包并绘图] 建立连接后  设置双方的网络通讯速率 丢包率 和延迟: sudo tcset enp0s8 --rate 100Mbps --delay 300ms --delay-distro 0 --loss 0% --overwrite
+[抓包并绘图] 等待60s 进行双方通信
+[抓包并绘图] 停止抓包
+[抓包并绘图] 关闭双端
+[抓包并绘图] 取消网络设置
+[抓包并绘图] 根据抓包结果绘制图像
+正在使用 /home/vagrant/server.pcap 抓包结果绘图
+绘制成功, 图像位于/vagrant/tju_tcp/test/SeqNum_VS_Time.png
+----- saved to perf/raw/loss_p0_r3 -----
+===== [loss_p1 rep3] rate=100 delay=300 distro=0 loss=1 =====
+
+即将使用如下网络状态进行数据传输: rate:100Mbps delay:300ms delay-distro:0 loss:1% 
+
+====================================================================
+============================开始测试================================
+====================================================================
+[自动测试] 编译提交源码
+> cd /vagrant/tju_tcp && make
+rm -f ./build/*.o client server
+gcc -pthread -g -ggdb -DDEBUG -I./inc -c -o build/tju_packet.o src/tju_packet.c
+gcc -pthread -g -ggdb -DDEBUG -I./inc -c -o build/kernel.o src/kernel.c
+gcc -pthread -g -ggdb -DDEBUG -I./inc -c -o build/tju_tcp.o src/tju_tcp.c
+gcc -pthread -g -ggdb -DDEBUG -I./inc ./src/server.c -o server ./build/tju_packet.o ./build/kernel.o ./build/tju_tcp.o 
+gcc -pthread -g -ggdb -DDEBUG -I./inc ./src/client.c -o client ./build/tju_packet.o ./build/kernel.o ./build/tju_tcp.o  
+
+[自动测试] 检测到用户提供了自己的测试Makefile, 使用用户的测试Makefile替换自带的版本
+> cp /vagrant/tju_tcp/test_Makefile /vagrant/tju_tcp/test/Makefile
+
+[自动测试] 编译测试源码
+> cd /vagrant/tju_tcp/test && make
+rm -f test_client test_server rdt_server rdt_client close_client client.log server.log rdt_server.log rdt_client.log rdt_recv_file.txt
+make: Warning: File 'Makefile' has modification time 87 s in the future
+gcc -pthread -g -ggdb -DDEBUG -I../inc ./test_client.c -o test_client ../build/tju_packet.o ../build/kernel.o ../build/tju_tcp.o 
+gcc -pthread -g -ggdb -DDEBUG -I../inc ./test_server.c -o test_server ../build/tju_packet.o ../build/kernel.o ../build/tju_tcp.o 
+gcc -pthread -g -ggdb -DDEBUG -I../inc ./test_rdt_server.c -o rdt_server ../build/tju_packet.o ../build/kernel.o ../build/tju_tcp.o 
+gcc -pthread -g -ggdb -DDEBUG -I../inc ./test_rdt_client.c -o rdt_client ../build/tju_packet.o ../build/kernel.o ../build/tju_tcp.o 
+./test_rdt_client.c: In function ‘main’:
+./test_rdt_client.c:37:5: warning: implicit declaration of function ‘fstat’ [-Wimplicit-function-declaration]
+   37 |     fstat(fd, &st);
+      |     ^~~~~
+gcc -pthread -g -ggdb -DDEBUG -I../inc ./test_close_client.c -o close_client ../build/tju_packet.o ../build/kernel.o ../build/tju_tcp.o 
+make: warning:  Clock skew detected.  Your build may be incomplete.
+
+============================ 抓包并绘制SeqNum随Time变化图 ================================
+[抓包并绘图] 清理上一次的抓包结果
+[抓包并绘图] 开始在服务端抓包
+[抓包并绘图] 开启服务端和客户端
+[抓包并绘图] 等待6s建立连接
+[抓包并绘图] 建立连接后  设置双方的网络通讯速率 丢包率 和延迟: sudo tcset enp0s8 --rate 100Mbps --delay 300ms --delay-distro 0 --loss 1% --overwrite
+[抓包并绘图] 等待60s 进行双方通信
+[抓包并绘图] 停止抓包
+[抓包并绘图] 关闭双端
+[抓包并绘图] 取消网络设置
+[抓包并绘图] 根据抓包结果绘制图像
+正在使用 /home/vagrant/server.pcap 抓包结果绘图
+绘制成功, 图像位于/vagrant/tju_tcp/test/SeqNum_VS_Time.png
+----- saved to perf/raw/loss_p1_r3 -----
+===== [loss_p3 rep3] rate=100 delay=300 distro=0 loss=3 =====
+
+即将使用如下网络状态进行数据传输: rate:100Mbps delay:300ms delay-distro:0 loss:3% 
+
+====================================================================
+============================开始测试================================
+====================================================================
+[自动测试] 编译提交源码
+> cd /vagrant/tju_tcp && make
+rm -f ./build/*.o client server
+gcc -pthread -g -ggdb -DDEBUG -I./inc -c -o build/tju_packet.o src/tju_packet.c
+gcc -pthread -g -ggdb -DDEBUG -I./inc -c -o build/kernel.o src/kernel.c
+gcc -pthread -g -ggdb -DDEBUG -I./inc -c -o build/tju_tcp.o src/tju_tcp.c
+gcc -pthread -g -ggdb -DDEBUG -I./inc ./src/server.c -o server ./build/tju_packet.o ./build/kernel.o ./build/tju_tcp.o 
+gcc -pthread -g -ggdb -DDEBUG -I./inc ./src/client.c -o client ./build/tju_packet.o ./build/kernel.o ./build/tju_tcp.o  
+make: Warning: File 'Makefile' has modification time 87 s in the future
+
+[自动测试] 检测到用户提供了自己的测试Makefile, 使用用户的测试Makefile替换自带的版本
+> cp /vagrant/tju_tcp/test_Makefile /vagrant/tju_tcp/test/Makefile
+
+[自动测试] 编译测试源码
+> cd /vagrant/tju_tcp/test && make
+rm -f test_client test_server rdt_server rdt_client close_client client.log server.log rdt_server.log rdt_client.log rdt_recv_file.txt
+gcc -pthread -g -ggdb -DDEBUG -I../inc ./test_client.c -o test_client ../build/tju_packet.o ../build/kernel.o ../build/tju_tcp.o 
+gcc -pthread -g -ggdb -DDEBUG -I../inc ./test_server.c -o test_server ../build/tju_packet.o ../build/kernel.o ../build/tju_tcp.o 
+gcc -pthread -g -ggdb -DDEBUG -I../inc ./test_rdt_server.c -o rdt_server ../build/tju_packet.o ../build/kernel.o ../build/tju_tcp.o 
+gcc -pthread -g -ggdb -DDEBUG -I../inc ./test_rdt_client.c -o rdt_client ../build/tju_packet.o ../build/kernel.o ../build/tju_tcp.o 
+./test_rdt_client.c: In function ‘main’:
+./test_rdt_client.c:37:5: warning: implicit declaration of function ‘fstat’ [-Wimplicit-function-declaration]
+   37 |     fstat(fd, &st);
+      |     ^~~~~
+gcc -pthread -g -ggdb -DDEBUG -I../inc ./test_close_client.c -o close_client ../build/tju_packet.o ../build/kernel.o ../build/tju_tcp.o 
+make: warning:  Clock skew detected.  Your build may be incomplete.
+
+============================ 抓包并绘制SeqNum随Time变化图 ================================
+[抓包并绘图] 清理上一次的抓包结果
+[抓包并绘图] 开始在服务端抓包
+[抓包并绘图] 开启服务端和客户端
+[抓包并绘图] 等待6s建立连接
+[抓包并绘图] 建立连接后  设置双方的网络通讯速率 丢包率 和延迟: sudo tcset enp0s8 --rate 100Mbps --delay 300ms --delay-distro 0 --loss 3% --overwrite
+[抓包并绘图] 等待60s 进行双方通信
+[抓包并绘图] 停止抓包
+[抓包并绘图] 关闭双端
+[抓包并绘图] 取消网络设置
+[抓包并绘图] 根据抓包结果绘制图像
+正在使用 /home/vagrant/server.pcap 抓包结果绘图
+绘制成功, 图像位于/vagrant/tju_tcp/test/SeqNum_VS_Time.png
+----- saved to perf/raw/loss_p3_r3 -----
+===== [loss_p10 rep3] rate=100 delay=300 distro=0 loss=10 =====
+
+即将使用如下网络状态进行数据传输: rate:100Mbps delay:300ms delay-distro:0 loss:10% 
+
+====================================================================
+============================开始测试================================
+====================================================================
+[自动测试] 编译提交源码
+> cd /vagrant/tju_tcp && make
+rm -f ./build/*.o client server
+gcc -pthread -g -ggdb -DDEBUG -I./inc -c -o build/tju_packet.o src/tju_packet.c
+gcc -pthread -g -ggdb -DDEBUG -I./inc -c -o build/kernel.o src/kernel.c
+gcc -pthread -g -ggdb -DDEBUG -I./inc -c -o build/tju_tcp.o src/tju_tcp.c
+gcc -pthread -g -ggdb -DDEBUG -I./inc ./src/server.c -o server ./build/tju_packet.o ./build/kernel.o ./build/tju_tcp.o 
+gcc -pthread -g -ggdb -DDEBUG -I./inc ./src/client.c -o client ./build/tju_packet.o ./build/kernel.o ./build/tju_tcp.o  
+make: Warning: File 'Makefile' has modification time 87 s in the future
+
+[自动测试] 检测到用户提供了自己的测试Makefile, 使用用户的测试Makefile替换自带的版本
+> cp /vagrant/tju_tcp/test_Makefile /vagrant/tju_tcp/test/Makefile
+
+[自动测试] 编译测试源码
+> cd /vagrant/tju_tcp/test && make
+rm -f test_client test_server rdt_server rdt_client close_client client.log server.log rdt_server.log rdt_client.log rdt_recv_file.txt
+gcc -pthread -g -ggdb -DDEBUG -I../inc ./test_client.c -o test_client ../build/tju_packet.o ../build/kernel.o ../build/tju_tcp.o 
+gcc -pthread -g -ggdb -DDEBUG -I../inc ./test_server.c -o test_server ../build/tju_packet.o ../build/kernel.o ../build/tju_tcp.o 
+gcc -pthread -g -ggdb -DDEBUG -I../inc ./test_rdt_server.c -o rdt_server ../build/tju_packet.o ../build/kernel.o ../build/tju_tcp.o 
+gcc -pthread -g -ggdb -DDEBUG -I../inc ./test_rdt_client.c -o rdt_client ../build/tju_packet.o ../build/kernel.o ../build/tju_tcp.o 
+./test_rdt_client.c: In function ‘main’:
+./test_rdt_client.c:37:5: warning: implicit declaration of function ‘fstat’ [-Wimplicit-function-declaration]
+   37 |     fstat(fd, &st);
+      |     ^~~~~
+gcc -pthread -g -ggdb -DDEBUG -I../inc ./test_close_client.c -o close_client ../build/tju_packet.o ../build/kernel.o ../build/tju_tcp.o 
+make: warning:  Clock skew detected.  Your build may be incomplete.
+
+============================ 抓包并绘制SeqNum随Time变化图 ================================
+[抓包并绘图] 清理上一次的抓包结果
+[抓包并绘图] 开始在服务端抓包
+[抓包并绘图] 开启服务端和客户端
+[抓包并绘图] 等待6s建立连接
+[抓包并绘图] 建立连接后  设置双方的网络通讯速率 丢包率 和延迟: sudo tcset enp0s8 --rate 100Mbps --delay 300ms --delay-distro 0 --loss 10% --overwrite
+[抓包并绘图] 等待60s 进行双方通信
+[抓包并绘图] 停止抓包
+[抓包并绘图] 关闭双端
+[抓包并绘图] 取消网络设置
+[抓包并绘图] 根据抓包结果绘制图像
+正在使用 /home/vagrant/server.pcap 抓包结果绘图
+绘制成功, 图像位于/vagrant/tju_tcp/test/SeqNum_VS_Time.png
+----- saved to perf/raw/loss_p10_r3 -----
+===== [delay_d50 rep3] rate=100 delay=50 distro=0 loss=0 =====
+
+即将使用如下网络状态进行数据传输: rate:100Mbps delay:50ms delay-distro:0 loss:0% 
+
+====================================================================
+============================开始测试================================
+====================================================================
+[自动测试] 编译提交源码
+> cd /vagrant/tju_tcp && make
+rm -f ./build/*.o client server
+gcc -pthread -g -ggdb -DDEBUG -I./inc -c -o build/tju_packet.o src/tju_packet.c
+gcc -pthread -g -ggdb -DDEBUG -I./inc -c -o build/kernel.o src/kernel.c
+gcc -pthread -g -ggdb -DDEBUG -I./inc -c -o build/tju_tcp.o src/tju_tcp.c
+gcc -pthread -g -ggdb -DDEBUG -I./inc ./src/server.c -o server ./build/tju_packet.o ./build/kernel.o ./build/tju_tcp.o 
+gcc -pthread -g -ggdb -DDEBUG -I./inc ./src/client.c -o client ./build/tju_packet.o ./build/kernel.o ./build/tju_tcp.o  
+make: Warning: File 'Makefile' has modification time 87 s in the future
+
+[自动测试] 检测到用户提供了自己的测试Makefile, 使用用户的测试Makefile替换自带的版本
+> cp /vagrant/tju_tcp/test_Makefile /vagrant/tju_tcp/test/Makefile
+
+[自动测试] 编译测试源码
+> cd /vagrant/tju_tcp/test && make
+rm -f test_client test_server rdt_server rdt_client close_client client.log server.log rdt_server.log rdt_client.log rdt_recv_file.txt
+gcc -pthread -g -ggdb -DDEBUG -I../inc ./test_client.c -o test_client ../build/tju_packet.o ../build/kernel.o ../build/tju_tcp.o 
+gcc -pthread -g -ggdb -DDEBUG -I../inc ./test_server.c -o test_server ../build/tju_packet.o ../build/kernel.o ../build/tju_tcp.o 
+gcc -pthread -g -ggdb -DDEBUG -I../inc ./test_rdt_server.c -o rdt_server ../build/tju_packet.o ../build/kernel.o ../build/tju_tcp.o 
+gcc -pthread -g -ggdb -DDEBUG -I../inc ./test_rdt_client.c -o rdt_client ../build/tju_packet.o ../build/kernel.o ../build/tju_tcp.o 
+./test_rdt_client.c: In function ‘main’:
+./test_rdt_client.c:37:5: warning: implicit declaration of function ‘fstat’ [-Wimplicit-function-declaration]
+   37 |     fstat(fd, &st);
+      |     ^~~~~
+gcc -pthread -g -ggdb -DDEBUG -I../inc ./test_close_client.c -o close_client ../build/tju_packet.o ../build/kernel.o ../build/tju_tcp.o 
+make: warning:  Clock skew detected.  Your build may be incomplete.
+
+============================ 抓包并绘制SeqNum随Time变化图 ================================
+[抓包并绘图] 清理上一次的抓包结果
+[抓包并绘图] 开始在服务端抓包
+[抓包并绘图] 开启服务端和客户端
+[抓包并绘图] 等待6s建立连接
+[抓包并绘图] 建立连接后  设置双方的网络通讯速率 丢包率 和延迟: sudo tcset enp0s8 --rate 100Mbps --delay 50ms --delay-distro 0 --loss 0% --overwrite
+[抓包并绘图] 等待60s 进行双方通信
+[抓包并绘图] 停止抓包
+[抓包并绘图] 关闭双端
+[抓包并绘图] 取消网络设置
+[抓包并绘图] 根据抓包结果绘制图像
+正在使用 /home/vagrant/server.pcap 抓包结果绘图
+绘制成功, 图像位于/vagrant/tju_tcp/test/SeqNum_VS_Time.png
+----- saved to perf/raw/delay_d50_r3 -----
+===== [delay_d150 rep3] rate=100 delay=150 distro=0 loss=0 =====
+
+即将使用如下网络状态进行数据传输: rate:100Mbps delay:150ms delay-distro:0 loss:0% 
+
+====================================================================
+============================开始测试================================
+====================================================================
+[自动测试] 编译提交源码
+> cd /vagrant/tju_tcp && make
+rm -f ./build/*.o client server
+gcc -pthread -g -ggdb -DDEBUG -I./inc -c -o build/tju_packet.o src/tju_packet.c
+gcc -pthread -g -ggdb -DDEBUG -I./inc -c -o build/kernel.o src/kernel.c
+gcc -pthread -g -ggdb -DDEBUG -I./inc -c -o build/tju_tcp.o src/tju_tcp.c
+gcc -pthread -g -ggdb -DDEBUG -I./inc ./src/server.c -o server ./build/tju_packet.o ./build/kernel.o ./build/tju_tcp.o 
+gcc -pthread -g -ggdb -DDEBUG -I./inc ./src/client.c -o client ./build/tju_packet.o ./build/kernel.o ./build/tju_tcp.o  
+make: Warning: File 'Makefile' has modification time 87 s in the future
+
+[自动测试] 检测到用户提供了自己的测试Makefile, 使用用户的测试Makefile替换自带的版本
+> cp /vagrant/tju_tcp/test_Makefile /vagrant/tju_tcp/test/Makefile
+
+[自动测试] 编译测试源码
+> cd /vagrant/tju_tcp/test && make
+rm -f test_client test_server rdt_server rdt_client close_client client.log server.log rdt_server.log rdt_client.log rdt_recv_file.txt
+gcc -pthread -g -ggdb -DDEBUG -I../inc ./test_client.c -o test_client ../build/tju_packet.o ../build/kernel.o ../build/tju_tcp.o 
+gcc -pthread -g -ggdb -DDEBUG -I../inc ./test_server.c -o test_server ../build/tju_packet.o ../build/kernel.o ../build/tju_tcp.o 
+gcc -pthread -g -ggdb -DDEBUG -I../inc ./test_rdt_server.c -o rdt_server ../build/tju_packet.o ../build/kernel.o ../build/tju_tcp.o 
+gcc -pthread -g -ggdb -DDEBUG -I../inc ./test_rdt_client.c -o rdt_client ../build/tju_packet.o ../build/kernel.o ../build/tju_tcp.o 
+./test_rdt_client.c: In function ‘main’:
+./test_rdt_client.c:37:5: warning: implicit declaration of function ‘fstat’ [-Wimplicit-function-declaration]
+   37 |     fstat(fd, &st);
+      |     ^~~~~
+gcc -pthread -g -ggdb -DDEBUG -I../inc ./test_close_client.c -o close_client ../build/tju_packet.o ../build/kernel.o ../build/tju_tcp.o 
+make: warning:  Clock skew detected.  Your build may be incomplete.
+
+============================ 抓包并绘制SeqNum随Time变化图 ================================
+[抓包并绘图] 清理上一次的抓包结果
+[抓包并绘图] 开始在服务端抓包
+[抓包并绘图] 开启服务端和客户端
+[抓包并绘图] 等待6s建立连接
+[抓包并绘图] 建立连接后  设置双方的网络通讯速率 丢包率 和延迟: sudo tcset enp0s8 --rate 100Mbps --delay 150ms --delay-distro 0 --loss 0% --overwrite
+[抓包并绘图] 等待60s 进行双方通信
+[抓包并绘图] 停止抓包
+[抓包并绘图] 关闭双端
+[抓包并绘图] 取消网络设置
+[抓包并绘图] 根据抓包结果绘制图像
+正在使用 /home/vagrant/server.pcap 抓包结果绘图
+绘制成功, 图像位于/vagrant/tju_tcp/test/SeqNum_VS_Time.png
+----- saved to perf/raw/delay_d150_r3 -----
+################ 全部 18 次实验完成，可运行: ################
+# python3 perf/parse_metrics.py   # 解析 raw -> metrics.csv
+# python3 perf/plot_perf.py       # 画两张对照图
